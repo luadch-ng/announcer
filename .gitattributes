@@ -1,0 +1,17 @@
+# Force LF line endings for all text files, regardless of host OS.
+# Matches the convention in the parent luadch repo and the upstream
+# announcer_client/announcer_bot repos.
+* text=auto eol=lf
+
+# Bundled binary deps - keep verbatim, never convert
+*.dll binary
+*.so binary
+*.so.* binary
+*.dylib binary
+*.exe binary
+*.png binary
+
+# Cert/key materials should never be converted either
+*.pem binary
+*.crt binary
+*.key binary
