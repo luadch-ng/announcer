@@ -36,51 +36,57 @@ net.loop = function()
         run = true
         if err then
             log.event( "Fail: " .. tostring( err ) )
+            -- TODO(phase-1): `tonumber( cfg.sleeptime ) or 10 .. " seconds..."`
+            -- parses as `tonumber(x) or (10 .. " seconds...")` due to Lua
+            -- operator precedence (.. binds tighter than `or`); when
+            -- cfg.sleeptime is nil the log/emit args become "10 seconds..."
+            -- literal string instead of 10. Preserved verbatim from upstream
+            -- across this file (4 sites total). Fix during Lua 5.4 migration.
             log.event( "Try to reconnect in " .. tonumber( cfg.sleeptime ) or 10 .. " seconds..." )
-            --events.emit( "status","hubconnect", "Fail: " .. tostring( err ) .. "  |  Try to reconnect in " .. tonumber( cfg.sleeptime ) or 10 .. " seconds..." )
-            events.emit( "status","hubconnect", "Fail: " .. tostring( err ) .. " | Try to reconnect in " .. tonumber( cfg.sleeptime ) or 10 .. " seconds..." )
+            --events.emit( "status", "hubconnect", "Fail: " .. tostring( err ) .. "  |  Try to reconnect in " .. tonumber( cfg.sleeptime ) or 10 .. " seconds..." )
+            events.emit( "status", "hubconnect", "Fail: " .. tostring( err ) .. " | Try to reconnect in " .. tonumber( cfg.sleeptime ) or 10 .. " seconds..." )
             socket.sleep( tonumber( cfg.sleeptime ) or 10 )
             run = false
         end
     until succ
     log.event( "Connected. Try a SSL handshake..." )
-    if run then events.emit( "status","hubconnect", "Connected. Try a SSL handshake..." ) end
+    if run then events.emit( "status", "hubconnect", "Connected. Try a SSL handshake..." ) end
     local client, err = ssl.wrap( client, sslctx )
     assert( client, "Fail: " .. tostring( err ) )
     client:settimeout( cfg.sockettimeout )
     local succ, err = client:dohandshake()
     if err then
         log.event( "Fail: " .. tostring( err ) )
-        events.emit( "status","hubhandshake", "Fail: " .. tostring( err ) )
+        events.emit( "status", "hubhandshake", "Fail: " .. tostring( err ) )
         run = false
         return false
     end
     local cert = client:getpeercertificate()
     log.event( "Generate keyprint..." )
-    if run then events.emit( "status","hubhandshake", "Generate keyprint..." ) end
+    if run then events.emit( "status", "hubhandshake", "Generate keyprint..." ) end
     local fingerprint = basexx.to_base32( basexx.from_hex( cert:digest( "sha256" ) ) ):gsub( "=", "" )
     if hub.keyp ~= "" then
         if fingerprint ~= hub.keyp then
             log.event( "Fail: Keyprint mismatch" )
-            events.emit( "status","hubkeyp", "Fail: Keyprint mismatch" )
+            events.emit( "status", "hubkeyp", "Fail: Keyprint mismatch" )
             run = false
             client:close()
             return true
         else
             log.event( "Connection with Keyprint verification..." )
-            events.emit( "status","hubkeyp", "Connection with Keyprint verification..." )
+            events.emit( "status", "hubkeyp", "Connection with Keyprint verification..." )
         end
     else
         log.event( "Connection without Keyprint verification..." )
-        events.emit( "status","hubkeyp", "Connection without Keyprint verification..." )
+        events.emit( "status", "hubkeyp", "Connection without Keyprint verification..." )
     end
     log.event( "Connection established. Try now to login..." )
-    if run then events.emit( "status","hubkeyp", "Connection established. Try now to login..." ) end
+    if run then events.emit( "status", "hubkeyp", "Connection established. Try now to login..." ) end
     log.event( "Sending support..." )
     local succ, err = client:send( "HSUP ADBASE ADTIGR ADOSNR ADKEYP ADADCS ADADC0\n" )
     if err then
         log.event( "Fail: " .. tostring( err ) )
-        events.emit( "status","support", "Fail: " .. tostring( err ) )
+        events.emit( "status", "support", "Fail: " .. tostring( err ) )
         run = false
         return false
     end
@@ -90,11 +96,11 @@ net.loop = function()
     --log.event( "-------------------------------------------------------------------------------" ) -- DEBUG
     -------------------------------------------------------------------------------------------------------
     log.event( "Waiting for hub support..." )
-    if run then events.emit( "status","support", "Waiting for hub support..." ) end
+    if run then events.emit( "status", "support", "Waiting for hub support..." ) end
     local buf, err = client:receive( "*l" )
     if err then
         log.event( "Fail: " .. tostring( err ) )
-        events.emit( "status","hubsupport", "Fail: " .. tostring( err ) )
+        events.emit( "status", "hubsupport", "Fail: " .. tostring( err ) )
         run = false
         return false
     end
@@ -104,20 +110,20 @@ net.loop = function()
     --log.event( "-------------------------------------------------------------------------------" ) -- DEBUG
     -------------------------------------------------------------------------------------------------------
     log.event( "Check for OSNR support..." )
-    if run then events.emit( "status","hubsupport", "Check for OSNR support..." ) end
+    if run then events.emit( "status", "hubsupport", "Check for OSNR support..." ) end
     if not buf:find( "ADOSNR" ) then
         log.event( "Fail: No OSNR support, closing..." )
-        events.emit( "status","hubosnr", "Fail: No OSNR support, closing..." )
+        events.emit( "status", "hubosnr", "Fail: No OSNR support, closing..." )
         run = false
         client:close()
         return true
     end
     log.event( "Hub has OSNR support, waiting for SID..." )
-    if run then events.emit( "status","hubosnr", "Hub has OSNR support, waiting for SID..." ) end
+    if run then events.emit( "status", "hubosnr", "Hub has OSNR support, waiting for SID..." ) end
     local buf, err = client:receive( "*l" )
     if err then
         log.event( "Fail: " .. tostring( err ) )
-        events.emit( "status","hubsid", "Fail: " .. tostring( err ) )
+        events.emit( "status", "hubsid", "Fail: " .. tostring( err ) )
         return false
     end
     -------------------------------------------------------------------------------------------------------
@@ -129,7 +135,7 @@ net.loop = function()
     if buf:find( "ISID" ) then
         sid = buf:sub( 6, 9 )
         log.event( "Provided SID: " .. sid )
-        if run then events.emit( "status","hubsid", "Provided SID: " .. sid ) end
+        if run then events.emit( "status", "hubsid", "Provided SID: " .. sid ) end
     else
         log.event( "No SID provided, closing..." )
         client:close()
@@ -166,7 +172,7 @@ net.loop = function()
     local buf, err = client:receive( "*l" )
     if err then
         log.event( "Fail: " .. tostring( err ) )
-        events.emit( "status","hubinf", "Fail: " .. tostring( err ) )
+        events.emit( "status", "hubinf", "Fail: " .. tostring( err ) )
         run = false
         return false
     end
@@ -182,11 +188,11 @@ net.loop = function()
         return true
     else
         log.event( "Hub INF provided, try to send own INF..." )
-        if run then events.emit( "status","hubinf", "Hub INF provided, try to send own INF..." ) end
+        if run then events.emit( "status", "hubinf", "Hub INF provided, try to send own INF..." ) end
         local succ, err = client:send( CLIENT_BINF )
         if err then
             log.event( "Fail: " .. tostring( err ) )
-            events.emit( "status","owninf", "Fail: " .. tostring( err ) )
+            events.emit( "status", "owninf", "Fail: " .. tostring( err ) )
             run = false
             return false
         end
@@ -197,11 +203,11 @@ net.loop = function()
     -------------------------------------------------------------------------------------------------------
     end
     log.event( "Own INF sended, waiting for password request..." )
-    if run then events.emit( "status","owninf", "Own INF sended, waiting for password request..." ) end
+    if run then events.emit( "status", "owninf", "Own INF sended, waiting for password request..." ) end
     local buf, err = client:receive( "*l" )
     if err then
         log.event( "Fail: " .. tostring( err ) )
-        events.emit( "status","passwd", "Fail: " .. tostring( err ) )
+        events.emit( "status", "passwd", "Fail: " .. tostring( err ) )
         run = false
         return false
     end
@@ -213,7 +219,7 @@ net.loop = function()
     local salt
     if not buf:find( "GPA" ) then
         log.event( "No password request, closing..." )
-        events.emit( "status","passwd", "Fail: No password request, closing..." )
+        events.emit( "status", "passwd", "Fail: No password request, closing..." )
         client:close()
         run = false
         return true
@@ -221,12 +227,12 @@ net.loop = function()
         salt = buf:sub( 6, -1 ):match( "^([A-Z2-7]+)" )
     end
     log.event( "Salt provided, try to send password..." )
-    if run then events.emit( "status","passwd", "Salt provided, try to send password..." ) end
+    if run then events.emit( "status", "passwd", "Salt provided, try to send password..." ) end
     local pas = adclib.hashpas( hub.pass, salt )
     local succ, err = client:send( "HPAS " .. pas .. "\n" )
     if err then
         log.event( "Fail: " .. tostring( err ) )
-        events.emit( "status","hubsalt", "Fail: " .. tostring( err ) )
+        events.emit( "status", "hubsalt", "Fail: " .. tostring( err ) )
         client:close()
         run = false
         return false
@@ -237,11 +243,11 @@ net.loop = function()
     --log.event( "-------------------------------------------------------------------------------" ) -- DEBUG
     -------------------------------------------------------------------------------------------------------
     log.event( "Waiting for login..." )
-    if run then events.emit( "status","hubsalt", "Waiting for login..." ) end
+    if run then events.emit( "status", "hubsalt", "Waiting for login..." ) end
     local buf, err = client:receive( "*l" )
     if err then
         log.event( "Fail: " .. tostring( err ) )
-        --events.emit( "status","hublogin", "Fail: " .. tostring( err ) )
+        --events.emit( "status", "hublogin", "Fail: " .. tostring( err ) )
         return false
     end
     -------------------------------------------------------------------------------------------------------
@@ -251,12 +257,17 @@ net.loop = function()
     -------------------------------------------------------------------------------------------------------
     if not buf:find( "BINF" ) then
         log.event( "Login failed. Last hub message: " .. buf )
-        events.emit( "status","hublogin", "Fail: Login failed. Last hub message: " .. buf )
+        events.emit( "status", "hublogin", "Fail: Login failed. Last hub message: " .. buf )
         client:close()
         run = false
         return true
     end
     local hubcount = "HR1"
+    -- TODO(phase-1): `buf:find( "CT4" or "CT8" or "CT16" or "OP1" )` short-
+    -- circuits to `buf:find("CT4")` because `or` returns the first truthy
+    -- string. CT8/CT16/OP1 branches are dead. Preserved verbatim from
+    -- upstream. Fix during Lua 5.4 migration; correct form is a sequence
+    -- of `buf:find()` calls or-ed together.
     if buf:find( "CT4" or "CT8" or "CT16" or "OP1" ) then
         hubcount = "HO1"
     end
@@ -272,7 +283,7 @@ net.loop = function()
     --log.event( "-------------------------------------------------------------------------------" ) -- DEBUG
     -------------------------------------------------------------------------------------------------------
     log.event( "Login complete." )
-    if run then events.emit( "status","hublogin", "Login complete." ) end
+    if run then events.emit( "status", "hublogin", "Login complete." ) end
     --// sslinfo
     local sslinfo, err = client:info()
     if sslinfo then
@@ -281,7 +292,7 @@ net.loop = function()
             log.event( "=============================================" )
             log.event( "   Cipher: " .. cipher )
             log.event( "=============================================" )
-            events.emit( "status","cipher", cipher )
+            events.emit( "status", "cipher", cipher )
         end
     end
     log.event( "Waiting " .. ( tonumber( cfg.sleeptime ) or 10 ) .. " seconds before starting the announcer..." )

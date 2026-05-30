@@ -22,9 +22,23 @@
 
 dofile "core/init.lua"
 
+local socket = require "socket"
+
 log.event( "==============================================================================" )
 log.event( "Starting announcer (CLI frontend)..." )
+
+-- Reconnect loop. net.loop() returns false on fatal error (auth fail,
+-- send error etc.); add a small sleep between retries so we don't
+-- hot-spin on a persistent fatal. The connect-path failure inside
+-- net.loop() already sleeps cfg.sleeptime via socket.sleep, but
+-- post-login failures bail out immediately - guard at the outer
+-- level too.
 repeat
-until net.loop()
+    local terminated = net.loop()
+    if not terminated then
+        socket.sleep( tonumber( cfg.sleeptime ) or 10 )
+    end
+until terminated
+
 log.event( "Announcer terminated." )
 os.exit()

@@ -43,6 +43,7 @@ luac.out
 log/*.txt
 certs/*.pem
 core/status.lua
+cfg/id.lua  # bot PID/CID - generated on first run by core/adc.lua, secret
 
 # Bundled binary deps (whitelisted - upstream client ships them with the repo)
 !lib/**/*.dll
