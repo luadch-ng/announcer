@@ -17,7 +17,7 @@ luac.out
 *.gch
 *.pch
 
-# Libraries
+# Libraries (intermediates - bundled lib/**.dll is whitelisted below)
 *.lib
 *.a
 *.la
@@ -25,7 +25,7 @@ luac.out
 *.def
 *.exp
 
-# Shared objects (inc. Windows DLLs)
+# Shared objects (inc. Windows DLLs) - bundled lib/ is whitelisted below
 *.dll
 *.so
 *.so.*
@@ -39,3 +39,18 @@ luac.out
 *.x86_64
 *.hex
 
+# Runtime data (per-install; never commit)
+log/*.txt
+certs/*.pem
+core/status.lua
+
+# Bundled binary deps (whitelisted - upstream client ships them with the repo)
+!lib/**/*.dll
+!lib/**/*.so
+!lib/**/*.so.*
+!lib/**/*.dylib
+!lib/ressources/**/*.dll
+
+# Frontend GUI freeze artefacts (build outputs - never commit)
+frontends/gui/*.exe
+frontends/gui/Announcer.exe
