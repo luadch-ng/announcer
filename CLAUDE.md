@@ -182,37 +182,52 @@ for status; `net.lua` no longer auto-runs (frontends invoke); new
 `cfg/id.lua` secret leak fixed in .gitignore; provenance docs for
 bundled binaries.
 
-### Phase 1 - Lua 5.4 migration [QUEUED, no fixed timeline]
+### Phase 1 - Lua 5.4 migration [IN PROGRESS]
 
 Goal: core + CLI on Lua 5.4 (matches hub).
 
-- `setfenv` / `getfenv` -> `_ENV`
-- `loadstring` -> `load`
-- `unpack` -> `table.unpack`
-- `module(...)` out
-- `//` integer-division operator
-- Reuse hub's already-5.4 vendored deps + CMake 1:1 (the big lever).
-- **Fix the 2 upstream parser bugs flagged with `TODO(phase-1)`
-  comments in `core/net.lua`:**
-  - `buf:find( "CT4" or "CT8" or "CT16" or "OP1" )` short-circuits
-    to `buf:find("CT4")` only - the other 3 branches are dead.
-  - 4 sites of `tonumber( cfg.sleeptime ) or 10 .. " seconds..."` -
-    parses as `tonumber(x) or (10 .. " seconds...")` because `..`
-    binds tighter than `or`; when sleeptime is nil the arg becomes
-    a literal "10 seconds..." string and `socket.sleep` errors.
-- Wrap `events.emit` handlers in `pcall` so one buggy frontend
-  handler doesn't kill the chain.
-- GUI integration: wire `events.on("status", ...)` to a handler
-  that writes `core/status.lua` so the existing GUI worker keeps
-  working in-process.
+PR-A (this PR, "lib bump + source migration + parser bug fixes"):
+- Lib bump: all hub-available deps swapped to hub's 5.4-built
+  versions (adclib, basexx, luasec ssl, luasocket socket/mime/
+  ltn12/mbox, unicode shim). Dead Lua source dropped (luasec
+  https/options, luasocket ftp/headers/http/smtp/tp/url) - never
+  required by announcer code per the require audit.
+- lfs.dll: built from upstream `lunarmodules/luafilesystem` source
+  against the hub's `lua.dll` (v1.9.0). Cross-platform .so/.dylib
+  is Phase 2.
+- Runtime bundling: `lua.exe`, `lua.dll`, `libcrypto-3-x64.dll`,
+  `libssl-3-x64.dll` shipped at repo root so operators don't need
+  a separate Lua 5.4 install. Whitelisted in `.gitignore`.
+- Source migration: `loadstring( ... )` -> `load( ... )` in
+  `core/util.lua` (the only Lua-5.1-incompatible idiom in the
+  codebase; setfenv/getfenv/unpack/module were already absent).
+- Parser-bug fixes (the 2 TODO(phase-1) markers from Phase 0):
+  - `buf:find( "CT4" or "CT8" or "CT16" or "OP1" )` now expanded
+    to a proper or-chain of `buf:find()` calls; CT8/CT16/OP1
+    branches are no longer dead.
+  - `tonumber( cfg.sleeptime ) or 10 .. " seconds..."` now
+    parenthesised via a hoisted local `_sleep`; sleeptime-nil
+    fallback no longer corrupts the sleep arg.
+
+PR-B (queued): events.lua pcall safety wrap around handler dispatch.
+
+PR-C (queued): GUI integration. Wire `events.on("status", ...)` to
+a handler that writes `core/status.lua` so the existing GUI worker
+keeps working in-process.
+
+Phase 2 (separate, queued): adopt hub's CMake 1:1 + cross-platform
+CI matrix. Build `.so`/`.dylib` for adclib/luasec/luasocket/lfs/
+unicode-shim. Replace `lib/ressources/*.dll` opaque resource bundles
+with sourced-from-PNG resource loading.
 
 ### Phase 2 - Cross-platform CLI [QUEUED, no fixed timeline]
 
 Goal: real Linux + Windows CLI via CMake + CI matrix.
 
-- Adopt hub's CMake pipeline.
+- Adopt hub's CMake pipeline (currently the .dlls are pulled from
+  the hub's build artifacts; Phase 2 builds them in-tree).
 - Ship `.so` / `.dylib` alongside the existing `.dll` for
-  luasec / luasocket / adclib / lfs.
+  luasec / luasocket / adclib / lfs / unicode-shim.
 - Replace `lib/ressources/*.dll` opaque resource bundles with
   sourced-from-PNG resource loading at runtime.
 - GitHub Actions matrix for build + smoke on Linux + Windows.

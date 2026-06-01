@@ -36,16 +36,15 @@ net.loop = function()
         run = true
         if err then
             log.event( "Fail: " .. tostring( err ) )
-            -- TODO(phase-1): `tonumber( cfg.sleeptime ) or 10 .. " seconds..."`
-            -- parses as `tonumber(x) or (10 .. " seconds...")` due to Lua
-            -- operator precedence (.. binds tighter than `or`); when
-            -- cfg.sleeptime is nil the log/emit args become "10 seconds..."
-            -- literal string instead of 10. Preserved verbatim from upstream
-            -- across this file (4 sites total). Fix during Lua 5.4 migration.
-            log.event( "Try to reconnect in " .. tonumber( cfg.sleeptime ) or 10 .. " seconds..." )
-            --events.emit( "status", "hubconnect", "Fail: " .. tostring( err ) .. "  |  Try to reconnect in " .. tonumber( cfg.sleeptime ) or 10 .. " seconds..." )
-            events.emit( "status", "hubconnect", "Fail: " .. tostring( err ) .. " | Try to reconnect in " .. tonumber( cfg.sleeptime ) or 10 .. " seconds..." )
-            socket.sleep( tonumber( cfg.sleeptime ) or 10 )
+            -- Phase 1 fix: was `tonumber( cfg.sleeptime ) or 10 .. " seconds..."`
+            -- which parses as `tonumber(x) or (10 .. " seconds...")` because
+            -- `..` binds tighter than `or`. When cfg.sleeptime was nil the
+            -- arg became the literal string "10 seconds..." and socket.sleep
+            -- would error. Now parenthesised at all sites.
+            local _sleep = ( tonumber( cfg.sleeptime ) or 10 )
+            log.event( "Try to reconnect in " .. _sleep .. " seconds..." )
+            events.emit( "status", "hubconnect", "Fail: " .. tostring( err ) .. " | Try to reconnect in " .. _sleep .. " seconds..." )
+            socket.sleep( _sleep )
             run = false
         end
     until succ
@@ -263,12 +262,10 @@ net.loop = function()
         return true
     end
     local hubcount = "HR1"
-    -- TODO(phase-1): `buf:find( "CT4" or "CT8" or "CT16" or "OP1" )` short-
-    -- circuits to `buf:find("CT4")` because `or` returns the first truthy
-    -- string. CT8/CT16/OP1 branches are dead. Preserved verbatim from
-    -- upstream. Fix during Lua 5.4 migration; correct form is a sequence
-    -- of `buf:find()` calls or-ed together.
-    if buf:find( "CT4" or "CT8" or "CT16" or "OP1" ) then
+    -- Phase 1 fix: was `buf:find( "CT4" or "CT8" or "CT16" or "OP1" )`
+    -- which short-circuits to `buf:find("CT4")` (the `or` returns the
+    -- first truthy string). The CT8/CT16/OP1 branches were dead.
+    if buf:find( "CT4" ) or buf:find( "CT8" ) or buf:find( "CT16" ) or buf:find( "OP1" ) then
         hubcount = "HO1"
     end
     local succ, err = client:send( "BINF " .. sid .. " " .. hubcount .. "\n" )
