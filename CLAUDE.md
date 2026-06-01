@@ -211,9 +211,12 @@ PR-A (this PR, "lib bump + source migration + parser bug fixes"):
 
 PR-B (queued): events.lua pcall safety wrap around handler dispatch.
 
-PR-C (queued): GUI integration. Wire `events.on("status", ...)` to
-a handler that writes `core/status.lua` so the existing GUI worker
-keeps working in-process.
+PR-C (shipped): GUI integration. New `frontends/gui/spawned_worker.lua`
+registers `events.on("status", ...)` -> writes `core/status.lua` for
+the wxLua GUI's poller. The GUI's `start_process()` now spawns the
+bundled `lua.exe` + the worker script via `wx.wxExecute`, replacing
+the upstream's `lib/ressources/client.dll` wxluafrozen Lua-5.1
+bundle (deleted in PR-C as orphaned).
 
 Phase 2 (separate, queued): adopt hub's CMake 1:1 + cross-platform
 CI matrix. Build `.so`/`.dylib` for adclib/luasec/luasocket/lfs/

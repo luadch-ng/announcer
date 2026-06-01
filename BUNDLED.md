@@ -57,12 +57,16 @@ directory** via a separate `package.cpath` line in
 3** scope; until then this remains a Lua-5.1 module. The CLI does
 not load it.
 
-## `lib/ressources/{client,res1,res2}.dll`
+## `lib/ressources/{res1,res2}.dll`
 
-GUI resource bundles inherited verbatim from upstream
+GUI icon resource bundles inherited verbatim from upstream
 `luadch/announcer_client` master branch (2022). See
 [`lib/ressources/README.md`](lib/ressources/README.md). Will be
 replaced with sourced-from-PNG resource loading in **Phase 2**.
+
+`client.dll` (the upstream wxluafrozen Lua-5.1 announcer-bot
+bundle) was removed in Phase 1 PR-C; the GUI now spawns
+`frontends/gui/spawned_worker.lua` via the bundled `lua.exe`.
 
 ## Verification
 
