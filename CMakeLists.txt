@@ -121,20 +121,30 @@ if(BUILD_GUI)
     set(wxUSE_AUI           OFF CACHE BOOL "")
     set(wxUSE_XRC           OFF CACHE BOOL "")
     set(wxUSE_OPENGL        OFF CACHE BOOL "")
-    set(wxUSE_HTML          OFF CACHE BOOL "")
-    set(wxUSE_QA            OFF CACHE BOOL "")
-    # wxRICHTEXT depends on wxHTML; the help controller also depends on
-    # wxHTML (chkconf.h enforces this at compile time). Turn both off.
+    # wxLua's pre-generated wxcore bindings reference wxBestHelpController
+    # (which falls through to wxHtmlHelpController on platforms without
+    # WinHelp) + wxWindow::GetHelpText() - both require wxUSE_HTML +
+    # wxUSE_HELP. Keeping HTML off triggers undeclared-symbol errors in
+    # the binding source set we can't easily patch around.
+    set(wxUSE_HTML          ON  CACHE BOOL "")
+    set(wxUSE_HELP          ON  CACHE BOOL "")
+    set(wxUSE_WXHTML_HELP   ON  CACHE BOOL "")
     set(wxUSE_RICHTEXT      OFF CACHE BOOL "")
-    set(wxUSE_HELP          OFF CACHE BOOL "")
-    set(wxUSE_WXHTML_HELP   OFF CACHE BOOL "")
-    # wxNet would be useful for the spawned-worker IPC but the announcer
-    # does that via lfs file polling, not sockets, so it can stay off.
-    set(wxUSE_NET           OFF CACHE BOOL "")
+    set(wxUSE_QA            OFF CACHE BOOL "")
+    # wxNet has to stay ON: wxLua's wxbase_file.cpp binding unconditionally
+    # references wxInternetFSHandler which lives in wxNet. The announcer
+    # itself never touches sockets through wxLua (file-poll IPC via lfs),
+    # but the binding source references the type and we can't easily
+    # exclude wxbase_file.cpp.
+    set(wxUSE_NET           ON  CACHE BOOL "")
     # wxAdv must stay ON: wxTaskBarIcon lives there.
     set(wxUSE_ADV           ON  CACHE BOOL "")
 
     add_subdirectory(wxwidgets EXCLUDE_FROM_ALL)
+
+    # wxLua C-module on top: builds lib/wx/wx.dll against the wxWidgets
+    # targets above + our existing `lua` target. Phase 3 Tier 2b (#17).
+    add_subdirectory(wxlua)
 endif()
 
 # -----------------------------------------------------------------------------
@@ -187,4 +197,23 @@ if(WIN32)
         install(FILES "${_openssl_${_dll_var}}" DESTINATION .)
         unset(_openssl_${_dll_var} CACHE)
     endforeach()
+
+    # When BUILD_GUI=ON the wxLua shared module (lib/wx/wx.dll) and the
+    # wxWidgets shared libs pull in the MinGW C/C++ runtime. Bundle those
+    # too so the install tree is self-sufficient (no PATH-leak from the
+    # builder's MinGW installation).
+    if(BUILD_GUI)
+        get_filename_component(_mingw_bindir "${CMAKE_CXX_COMPILER}" DIRECTORY)
+        foreach(_rt libgcc_s_seh-1.dll libstdc++-6.dll libwinpthread-1.dll)
+            find_file(_mingw_rt_${_rt}
+                NAMES ${_rt}
+                HINTS "${_mingw_bindir}"
+                NO_DEFAULT_PATH
+            )
+            if(_mingw_rt_${_rt})
+                install(FILES "${_mingw_rt_${_rt}}" DESTINATION .)
+            endif()
+            unset(_mingw_rt_${_rt} CACHE)
+        endforeach()
+    endif()
 endif()
