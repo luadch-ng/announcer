@@ -1112,47 +1112,47 @@ local integrity_check = function()
         [ "core" ] = "directory",
         [ "lib" ] = "directory",
         [ "log" ] = "directory",
+        --// Runtime (Phase 1 PR-A bundled lua.exe + 5.4 runtime + OpenSSL)
+        [ "lua.exe" ] = "file",
         [ "lua.dll" ] = "file",
-        [ "lua5.1.dll" ] = "file",
         [ "libcrypto-3-x64.dll" ] = "file",
         [ "libssl-3-x64.dll" ] = "file",
+        --// Core
         [ "core/adc.lua" ] = "file",
         [ "core/announce.lua" ] = "file",
         [ "core/const.lua" ] = "file",
+        [ "core/events.lua" ] = "file",
         [ "core/init.lua" ] = "file",
         [ "core/log.lua" ] = "file",
         [ "core/net.lua" ] = "file",
-        [ "core/status.lua" ] = "file",
         [ "core/util.lua" ] = "file",
+        --// Config
         [ "cfg/categories.lua" ] = "file",
         [ "cfg/cfg.lua" ] = "file",
         [ "cfg/hub.lua" ] = "file",
         [ "cfg/rules.lua" ] = "file",
         [ "cfg/sslparams.lua" ] = "file",
+        --// Bundled deps (Phase 1 PR-A swapped 5.1 -> 5.4 from hub)
         [ "lib/adclib/adclib.dll" ] = "file",
         [ "lib/basexx/basexx.lua" ] = "file",
         [ "lib/lfs/lfs.dll" ] = "file",
         [ "lib/lfs_wx/lfs.dll" ] = "file",
-        [ "lib/luasec/lua/https.lua" ] = "file",
-        [ "lib/luasec/lua/options.lua" ] = "file",
         [ "lib/luasec/lua/ssl.lua" ] = "file",
         [ "lib/luasec/ssl/ssl.dll" ] = "file",
-        [ "lib/luasocket/lua/ftp.lua" ] = "file",
-        [ "lib/luasocket/lua/http.lua" ] = "file",
         [ "lib/luasocket/lua/ltn12.lua" ] = "file",
+        [ "lib/luasocket/lua/mbox.lua" ] = "file",
         [ "lib/luasocket/lua/mime.lua" ] = "file",
-        [ "lib/luasocket/lua/smtp.lua" ] = "file",
         [ "lib/luasocket/lua/socket.lua" ] = "file",
-        [ "lib/luasocket/lua/tp.lua" ] = "file",
-        [ "lib/luasocket/lua/url.lua" ] = "file",
         [ "lib/luasocket/mime/mime.dll" ] = "file",
         [ "lib/luasocket/socket/socket.dll" ] = "file",
-        [ "lib/ressources/client.dll" ] = "file",
+        [ "lib/unicode/unicode.lua" ] = "file",
+        --// GUI resources
         [ "lib/ressources/res1.dll" ] = "file",
         [ "lib/ressources/res2.dll" ] = "file",
         [ "lib/ressources/png/applogo_96x96.png" ] = "file",
         [ "lib/ressources/png/GPLv3_160x80.png" ] = "file",
-        [ "lib/unicode/unicode.dll" ] = "file",
+        --// Spawned worker (Phase 1 PR-C; replaces upstream lib/ressources/client.dll)
+        [ "frontends/gui/spawned_worker.lua" ] = "file",
     }
     local path = wx.wxGetCwd() .. "\\"
     local mode, err
@@ -3789,6 +3789,15 @@ local start_process = function()
     --// events.on("status", ...) handler that writes core/status.lua
     --// for THIS GUI to poll.
     local cwd = wx.wxGetCwd()
+    --// Defensive: strip trailing backslash (Windows drive roots like
+    --// "C:\" trail with a separator); the closing `\"` in the quoted
+    --// path would otherwise be interpreted as an MSVCRT escaped-quote
+    --// and break argv parsing on the spawned process side.
+    cwd = string.gsub( cwd, "\\+$", "" )
+    if cwd == "" then
+        log_broadcast( log_window, "Fail: wxGetCwd() returned empty; cannot spawn announcer.", "RED" )
+        return
+    end
     local cmd = '"' .. cwd .. '\\lua.exe" "' .. cwd .. '\\frontends\\gui\\spawned_worker.lua"'
 
     ---------------------------------------------------------------------------------------------------------------------------------
