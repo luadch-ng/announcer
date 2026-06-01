@@ -10,11 +10,11 @@ This repo consolidates two stale upstream tools - [`luadch/announcer_client`](ht
 
 **Phase 0** (current, v1.0.0-pre): consolidated tree, still on Lua 5.1. The CLI frontend works on Windows; the GUI continues to use upstream's wxLua 2.8.12.3 bootstrap and is Windows-only.
 
-**Phase 1** (planned): migrate the core + CLI to Lua 5.4 (matches the hub, lets the announcer share the hub's vendored deps + CMake pipeline).
+**Phase 1** (SHIPPED 2026-06-01): core + CLI migrated to Lua 5.4. Hub-vendored 5.4 deps + `lfs.dll` built fresh + `lua.exe`/`lua.dll` + OpenSSL bundled at install root. Events dispatch + GUI file-IPC bridge in place.
 
-**Phase 2** (planned): real cross-platform CLI (Linux + Windows) via a CMake build matrix and bundled `.so`/`.dylib` deps. The bot's existing `.dll`/`.so` filetype detect (already merged into `core/init.lua`) is the seed.
+**Phase 2** (IN PROGRESS): CMake build pipeline. PR-A (this PR) adopts the hub's CMake 1:1 + adds a standalone `lua.exe` build target + vendors lfs source. Outputs at `build/install/announcer/`. PR-B is Linux build verification; PR-C is GitHub Actions CI matrix; PR-D is the 2 TODO(phase-2) source markers; PR-E replaces GUI resource `.dll` blobs with PNG loading.
 
-**Phase 3** (planned, biggest risk): GUI on Lua 5.4. wxLua 2.8 is ancient; modern wxLua 3.x compatibility is unknown. The GUI may lag behind core+CLI, stay Windows-only, or be rebuilt later.
+**Phase 3** (planned, biggest risk): GUI on Lua 5.4 + wxLua 3.x. wxLua 2.8 is ancient. The GUI may lag behind core+CLI, stay Windows-only, or be rebuilt later. Closes [#7](https://github.com/luadch-ng/announcer/issues/7) (status.lua poll race window).
 
 ## Layout
 
@@ -55,23 +55,35 @@ lib/          Bundled deps shipped with the repo
   ressources/ GUI icons + .dll resource bundles
 ```
 
-## Usage (CLI, Phase 0, Windows)
+## Build + run (CLI, Windows)
 
-1. **Certificate** - generate a TLS cert (the hub requires bot accounts to connect over TLS):
-   ```sh
-   cd certs/
-   make_cert.bat   # OpenSSL must be on PATH
-   ```
-   Or use [luadch-ng/certmanager](https://github.com/luadch-ng/certmanager).
+After Phase 2 the announcer ships **source-only**; build with the in-tree
+CMake pipeline (mirrors the parent luadch repo's recipe). See
+[`docs/BUILDING.md`](docs/BUILDING.md) for prerequisites + full details.
 
-2. **Configure** - edit `cfg/hub.lua` (hub addr / nick / pass / keyprint) and `cfg/rules.lua` (which directories to scan + announce).
+```sh
+# From the repo root:
+cmake -B build -G "MinGW Makefiles" -DCMAKE_BUILD_TYPE=Release -DOPENSSL_ROOT_DIR=C:/OpenSSL
+cmake --build build -j
+cmake --install build
 
-3. **Run**:
-   ```sh
-   lua frontends/cli/main.lua
-   ```
+# Output lands at build/install/announcer/. From there:
+cd build/install/announcer
 
-   Log output lands in `log/logfile.txt` and announced releases in `log/announced.txt`.
+# 1. Generate a TLS cert (hub requires TLS):
+cd certs/ && make_cert.bat && cd ..
+
+# 2. Edit cfg/hub.lua (addr / nick / pass / keyprint) and cfg/rules.lua (dirs to scan).
+
+# 3. Run:
+lua.exe frontends/cli/main.lua
+```
+
+Log output lands in `log/logfile.txt` and announced releases in `log/announced.txt`.
+
+For a no-build alternative (release zip with the binaries pre-built),
+watch the [GitHub releases](https://github.com/luadch-ng/announcer/releases)
+page once Phase 2 PR-C ships the CI build artefacts.
 
 ## Usage (GUI, Phase 0, Windows)
 

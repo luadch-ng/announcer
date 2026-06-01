@@ -47,18 +47,16 @@ core/status.lua
 cfg/id.lua
 
 # Bundled binary deps (whitelisted - shipped with the repo)
-!lib/**/*.dll
-!lib/**/*.so
-!lib/**/*.so.*
-!lib/**/*.dylib
+# Phase 2 swapped most C-extension .dlls to CMake build artefacts; the
+# only committed binaries left are lib/lfs_wx/lfs.dll (still Lua-5.1,
+# Phase 3 GUI rework will replace) and the GUI resource bundles under
+# lib/ressources/ (Phase 2 PR-E will replace with PNG-loaded resources).
+!lib/lfs_wx/**/*.dll
 !lib/ressources/**/*.dll
 
-# Bundled Lua 5.4 runtime + OpenSSL + lua interpreter (Phase 1+).
-# Win64 only for Phase 1 - Phase 2 adds Linux .so / macOS .dylib via CMake.
-!lua.exe
-!lua.dll
-!libcrypto-3-x64.dll
-!libssl-3-x64.dll
+# CMake build directory (build outputs are NOT committed; build locally
+# from source via the in-tree CMake pipeline - see README and BUILDING.md)
+build/
 
 # Frontend GUI freeze artefacts (build outputs - never commit)
 frontends/gui/*.exe
