@@ -75,6 +75,69 @@ add_subdirectory(luasec)
 add_subdirectory(lfs)
 
 # -----------------------------------------------------------------------------
+# Optional: wxWidgets 3.2.10 (vendored as git submodule under wxwidgets/)
+# for the announcer GUI. Phase 3 Tier 2a (#17).
+#
+# Opt-in via -DBUILD_GUI=ON. Default OFF because:
+# - The CLI binary + worker process don't link wxWidgets at all
+# - Building wxWidgets adds ~5 min to the CMake build (it has its own
+#   ~1500 source files)
+# - CI's CLI smoke chain shouldn't pay that cost on every push
+#
+# When enabled: builds the minimal feature set Announcer.wx.lua needs -
+# wxbase (foundation), wxcore (controls + frame + dialog), wxadv
+# (TaskBarIcon). Skip everything heavy we don't use (webview, aui,
+# ribbon, propgrid, stc, media, html, richtext, xrc, gl, net, qa).
+#
+# wxLua (Tier 2b) will link against the wxbase + wxcore + wxadv targets
+# exported here.
+# -----------------------------------------------------------------------------
+option(BUILD_GUI "Build the wxLua GUI runtime (vendored wxWidgets + wxLua)" OFF)
+
+if(BUILD_GUI)
+    if(NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/wxwidgets/CMakeLists.txt")
+        message(FATAL_ERROR
+            "wxwidgets submodule not initialised. Run:\n"
+            "  git submodule update --init --recursive")
+    endif()
+
+    # Build flags: shared libs (Phase 2 model = dynamic where it makes
+    # sense; static wxWidgets would be ~50 MB per target and unique per
+    # build flag set).
+    set(wxBUILD_SHARED      ON  CACHE BOOL "Build wxWidgets as shared libraries")
+    set(wxBUILD_MONOLITHIC  OFF CACHE BOOL "One wx DLL or split per-component")
+    set(wxBUILD_PRECOMP     OFF CACHE BOOL "Skip PCH - fragile across compilers")
+    set(wxBUILD_SAMPLES     OFF CACHE STRING "")
+    set(wxBUILD_DEMOS       OFF CACHE BOOL "")
+    set(wxBUILD_TESTS       OFF CACHE STRING "")
+    set(wxBUILD_BENCHMARKS  OFF CACHE BOOL "")
+    set(wxBUILD_INSTALL     OFF CACHE BOOL "Don't install wxWidgets headers/libs into our tree")
+    # Feature trim - things the announcer's Announcer.wx.lua never touches.
+    set(wxUSE_WEBVIEW       OFF CACHE BOOL "")
+    set(wxUSE_MEDIACTRL     OFF CACHE BOOL "")
+    set(wxUSE_RIBBON        OFF CACHE BOOL "")
+    set(wxUSE_PROPGRID      OFF CACHE BOOL "")
+    set(wxUSE_STC           OFF CACHE BOOL "")
+    set(wxUSE_AUI           OFF CACHE BOOL "")
+    set(wxUSE_XRC           OFF CACHE BOOL "")
+    set(wxUSE_OPENGL        OFF CACHE BOOL "")
+    set(wxUSE_HTML          OFF CACHE BOOL "")
+    set(wxUSE_QA            OFF CACHE BOOL "")
+    # wxRICHTEXT depends on wxHTML; the help controller also depends on
+    # wxHTML (chkconf.h enforces this at compile time). Turn both off.
+    set(wxUSE_RICHTEXT      OFF CACHE BOOL "")
+    set(wxUSE_HELP          OFF CACHE BOOL "")
+    set(wxUSE_WXHTML_HELP   OFF CACHE BOOL "")
+    # wxNet would be useful for the spawned-worker IPC but the announcer
+    # does that via lfs file polling, not sockets, so it can stay off.
+    set(wxUSE_NET           OFF CACHE BOOL "")
+    # wxAdv must stay ON: wxTaskBarIcon lives there.
+    set(wxUSE_ADV           ON  CACHE BOOL "")
+
+    add_subdirectory(wxwidgets EXCLUDE_FROM_ALL)
+endif()
+
+# -----------------------------------------------------------------------------
 # Pure-Lua bundled helpers (flat copies; no compilation)
 # -----------------------------------------------------------------------------
 install(FILES basexx/basexx.lua            DESTINATION lib/basexx)

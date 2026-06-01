@@ -15,9 +15,25 @@
 
 - `gcc` and `cmake >= 3.20`.
 - `libssl-dev` (OpenSSL 3.0+) + `zlib1g-dev` (matches the hub's deps).
+- `libgtk-3-dev` (the wxWidgets Linux backend; Phase 3 Tier 2c).
 
-Linux build is Phase 2 PR-B scope; the source compiles under POSIX
-already but is not CI-verified yet.
+### Clone (both platforms)
+
+The wxWidgets source is a git submodule. Either:
+
+```sh
+git clone --recurse-submodules https://github.com/luadch-ng/announcer.git
+```
+
+Or after a plain clone:
+
+```sh
+cd announcer
+git submodule update --init --recursive
+```
+
+Without this step `cmake -B build` fails at configure with a clear
+error pointing at this section.
 
 ## Build (Windows)
 
@@ -28,6 +44,24 @@ cmake -B build -G "MinGW Makefiles" -DCMAKE_BUILD_TYPE=Release -DOPENSSL_ROOT_DI
 cmake --build build -j
 cmake --install build
 ```
+
+### Opting in to the GUI build (Phase 3 Tier 2+)
+
+The wxLua-3.x GUI runtime is gated behind `-DBUILD_GUI=ON`. Default is
+OFF so the CLI smoke + CI matrix don't pay the wxWidgets-build cost
+(~5 min) on every push. To get a working GUI:
+
+```sh
+git submodule update --init --recursive   # one-time, pulls wxWidgets 3.2.10
+cmake -B build -G "MinGW Makefiles" -DCMAKE_BUILD_TYPE=Release -DOPENSSL_ROOT_DIR=C:/OpenSSL -DBUILD_GUI=ON
+cmake --build build -j
+cmake --install build
+```
+
+Tier 2a (#17 sub-task) ships only the wxWidgets-3.2.10 part of this
+chain: wxbase + wxcore + wxadv DLLs build cleanly. Tier 2b adds the
+wxLua glue that produces `lib/wx/wx.dll`; until then the GUI still
+needs the local OneLuaPro overlay tested in Tier 0.
 
 Output lands at `build/install/announcer/`:
 
