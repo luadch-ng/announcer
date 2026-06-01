@@ -46,13 +46,13 @@ core/status.lua
 # bot PID/CID - generated on first run by core/adc.lua, IS the bot's tiger-hash secret
 cfg/id.lua
 
-# Bundled binary deps (whitelisted - shipped with the repo)
-# Phase 2 swapped most C-extension .dlls to CMake build artefacts; the
-# only committed binaries left are lib/lfs_wx/lfs.dll (still Lua-5.1,
-# Phase 3 GUI rework will replace) and the GUI resource bundles under
-# lib/ressources/ (Phase 2 PR-E will replace with PNG-loaded resources).
-!lib/lfs_wx/**/*.dll
-!lib/ressources/**/*.dll
+# No committed runtime binaries. Phase 2 CMake migration turned every
+# C extension into a build artefact; Phase 3 Tier 1 dropped the last two
+# binary blobs (lib/lfs_wx/lfs.dll for the legacy wxLua-2.8 GUI, and
+# lib/ressources/res{1,2}.dll PE icon containers - icons now ship as
+# PNGs under lib/ressources/png/). If a *.dll ever needs to be
+# committed again, add a targeted whitelist here with provenance docs
+# in BUNDLED.md.
 
 # CMake build directory (build outputs are NOT committed; build locally
 # from source via the in-tree CMake pipeline - see README and BUILDING.md)

@@ -14,20 +14,18 @@
 --// IMPORTS //----------------------------------------------------------------------------------------------------------------------
 -------------------------------------------------------------------------------------------------------------------------------------
 
-local filetype = ( os.getenv( "COMSPEC" ) and os.getenv( "WINDIR" and ".dll" ) ) or ".so"
+local filetype = ( os.getenv( "COMSPEC" ) and os.getenv( "WINDIR" ) and ".dll" ) or ".so"
 
 package.path = package.path .. ";"
     .. "././core/?.lua;"
     .. "././lib/?/?.lua;"
     .. "././lib/luasocket/lua/?.lua;"
     .. "././lib/luasec/lua/?.lua;"
-    .. "././lib/jit/?.lua;"
 
 package.cpath = package.cpath .. ";"
     .. "././lib/?/?" .. filetype .. ";"
     .. "././lib/luasocket/?/?" .. filetype .. ";"
     .. "././lib/luasec/?/?" .. filetype .. ";"
-    .. "././lib/lfs_wx/?" .. ".dll" .. ";"
 
 dofile( "core/const.lua" )
 
@@ -35,6 +33,12 @@ dofile( "core/const.lua" )
 local wx   = require( "wx" )
 local util = require( CORE_PATH .. "util" )
 local lfs  = require( "lfs" )
+
+--// Ensure PNG image handler is registered before any wxImage:LoadFile()
+--// call. wxWidgets 3.x normally pre-registers standard handlers, but
+--// being explicit makes the dependency obvious and survives any future
+--// wx build that compiles handlers conditionally.
+wx.wxImage.AddHandler( wx.wxPNGHandler() )
 
 --// defaults
 local control
@@ -80,14 +84,23 @@ local files = {
         [ "status" ]        = CORE_PATH .. "status.lua",
     },
     [ "res" ] = {
-        [ "icon1" ]         = RES_PATH .. "res1.dll",
-        [ "icon2" ]         = RES_PATH .. "res2.dll",
         --// client_app entry removed in Phase 1 PR-C - the wxluafrozen
         --// Lua-5.1 lib/ressources/client.dll is replaced by spawning
         --// the bundled lua.exe + frontends/gui/spawned_worker.lua
         --// (see start_process() below).
-        [ "png_gpl" ]       = RES_PATH .. "png/GPLv3_160x80.png",
-        [ "png_applogo" ]   = RES_PATH .. "png/applogo_96x96.png",
+        --// res1.dll + res2.dll PE icon containers removed in Phase 3
+        --// Tier 1 (#15); the wxLua 3.x port cannot extract PE-resource
+        --// icons with the wxLua-2.8 frozen-distribution shortcut, so we
+        --// ship the same 7 icons as PNG files instead.
+        [ "png_gpl" ]            = RES_PATH .. "png/GPLv3_160x80.png",
+        [ "png_applogo" ]        = RES_PATH .. "png/applogo_96x96.png",
+        [ "png_app_16x16" ]      = RES_PATH .. "png/applogo_16x16.png",
+        [ "png_app_32x32" ]      = RES_PATH .. "png/applogo_32x32.png",
+        [ "png_tab_0_16x16" ]    = RES_PATH .. "png/tab_0_16x16.png",
+        [ "png_tab_1_16x16" ]    = RES_PATH .. "png/tab_1_16x16.png",
+        [ "png_tab_2_16x16" ]    = RES_PATH .. "png/tab_2_16x16.png",
+        [ "png_tab_3_16x16" ]    = RES_PATH .. "png/tab_3_16x16.png",
+        [ "png_tab_4_16x16" ]    = RES_PATH .. "png/tab_4_16x16.png",
     },
     [ "log" ] = {
         [ "announced" ]     = LOG_PATH .. "announced.txt",
@@ -260,10 +273,24 @@ local about_bold = wx.wxFont( 10, wx.wxMODERN, wx.wxNORMAL, wx.wxFONTWEIGHT_BOLD
 --// ICONS //------------------------------------------------------------------------------------------------------------------------
 -------------------------------------------------------------------------------------------------------------------------------------
 
+--// Helpers to load PNG resources. wxLua 3.x has no PE-icon-extraction
+--// shortcut on Windows so the icons that the wxLua-2.8 build pulled
+--// from res1.dll / res2.dll are now bundled as PNG files in
+--// lib/ressources/png/ (extracted once via wxLua itself in Phase 3
+--// Tier 1, see commit message).
+local function load_png_bitmap( path )
+    return wx.wxBitmap( path, wx.wxBITMAP_TYPE_PNG )
+end
+local function load_png_icon( path )
+    local ico = wx.wxIcon()
+    ico:CopyFromBitmap( load_png_bitmap( path ) )
+    return ico
+end
+
 --// icons for app titlebar and taskbar
 local icons = wx.wxIconBundle()
-icons:AddIcon( wx.wxIcon( files[ "res" ][ "icon1" ], 3, 16, 16 ) )
-icons:AddIcon( wx.wxIcon( files[ "res" ][ "icon1" ], 3, 32, 32 ) )
+icons:AddIcon( load_png_icon( files[ "res" ][ "png_app_16x16" ] ) )
+icons:AddIcon( load_png_icon( files[ "res" ][ "png_app_32x32" ] ) )
 
 --// icons for menubar
 local mb_bmp_about_16x16 = wx.wxArtProvider.GetBitmap( wx.wxART_INFORMATION, wx.wxART_TOOLBAR )
@@ -273,28 +300,23 @@ local mb_bmp_exit_16x16  = wx.wxArtProvider.GetBitmap( wx.wxART_QUIT,        wx.
 local tb_bmp_about_16x16 = wx.wxArtProvider.GetBitmap( wx.wxART_INFORMATION, wx.wxART_TOOLBAR )
 local tb_bmp_exit_16x16  = wx.wxArtProvider.GetBitmap( wx.wxART_QUIT,        wx.wxART_TOOLBAR )
 
---// icons for tabs
-local tab_1_ico = wx.wxIcon( files[ "res" ][ "icon2" ] .. ";0", wx.wxBITMAP_TYPE_ICO, 16, 16 )
-local tab_2_ico = wx.wxIcon( files[ "res" ][ "icon2" ] .. ";1", wx.wxBITMAP_TYPE_ICO, 16, 16 )
-local tab_3_ico = wx.wxIcon( files[ "res" ][ "icon2" ] .. ";2", wx.wxBITMAP_TYPE_ICO, 16, 16 )
-local tab_4_ico = wx.wxIcon( files[ "res" ][ "icon2" ] .. ";3", wx.wxBITMAP_TYPE_ICO, 16, 16 )
-local tab_5_ico = wx.wxIcon( files[ "res" ][ "icon2" ] .. ";3", wx.wxBITMAP_TYPE_ICO, 16, 16 )
-local tab_6_ico = wx.wxIcon( files[ "res" ][ "icon2" ] .. ";4", wx.wxBITMAP_TYPE_ICO, 16, 16 )
-
-tab_1_bmp = wx.wxBitmap(); tab_1_bmp:CopyFromIcon( tab_1_ico )
-tab_2_bmp = wx.wxBitmap(); tab_2_bmp:CopyFromIcon( tab_2_ico )
-tab_3_bmp = wx.wxBitmap(); tab_3_bmp:CopyFromIcon( tab_3_ico )
-tab_4_bmp = wx.wxBitmap(); tab_4_bmp:CopyFromIcon( tab_4_ico )
-tab_5_bmp = wx.wxBitmap(); tab_5_bmp:CopyFromIcon( tab_5_ico )
-tab_6_bmp = wx.wxBitmap(); tab_6_bmp:CopyFromIcon( tab_6_ico )
+--// icons for tabs. tab_5 deliberately reuses tab_3's PNG to match
+--// the upstream wxLua-2.8 behaviour (res2.dll ;3 was referenced by
+--// both tab_4 and tab_5 - the duplication is by design, not a typo).
+local tab_1_bmp = load_png_bitmap( files[ "res" ][ "png_tab_0_16x16" ] )
+local tab_2_bmp = load_png_bitmap( files[ "res" ][ "png_tab_1_16x16" ] )
+local tab_3_bmp = load_png_bitmap( files[ "res" ][ "png_tab_2_16x16" ] )
+local tab_4_bmp = load_png_bitmap( files[ "res" ][ "png_tab_3_16x16" ] )
+local tab_5_bmp = load_png_bitmap( files[ "res" ][ "png_tab_3_16x16" ] )
+local tab_6_bmp = load_png_bitmap( files[ "res" ][ "png_tab_4_16x16" ] )
 
 notebook_image_list = wx.wxImageList( 16, 16 )
-notebook_image_list:Add( wx.wxBitmap( tab_1_bmp ) )
-notebook_image_list:Add( wx.wxBitmap( tab_2_bmp ) )
-notebook_image_list:Add( wx.wxBitmap( tab_3_bmp ) )
-notebook_image_list:Add( wx.wxBitmap( tab_4_bmp ) )
-notebook_image_list:Add( wx.wxBitmap( tab_5_bmp ) )
-notebook_image_list:Add( wx.wxBitmap( tab_6_bmp ) )
+notebook_image_list:Add( tab_1_bmp )
+notebook_image_list:Add( tab_2_bmp )
+notebook_image_list:Add( tab_3_bmp )
+notebook_image_list:Add( tab_4_bmp )
+notebook_image_list:Add( tab_5_bmp )
+notebook_image_list:Add( tab_6_bmp )
 
 -------------------------------------------------------------------------------------------------------------------------------------
 --// CREATE LOG BROADCAST FUNCTION //------------------------------------------------------------------------------------------------
@@ -404,13 +426,16 @@ local show_about_window = function( frame )
     di:SetMinSize( wx.wxSize( 320, 505 ) )
     di:SetMaxSize( wx.wxSize( 320, 505 ) )
 
-    --// app logo
-    local bmp_applogo = wx.wxBitmap():ConvertToImage()
-    bmp_applogo:LoadFile( files[ "res" ][ "png_applogo" ] )
-    local X, Y = bmp_applogo:GetWidth(), bmp_applogo:GetHeight()
-    control = wx.wxStaticBitmap( di, wx.wxID_ANY, wx.wxBitmap( bmp_applogo ), wx.wxPoint( 0, 5 ), wx.wxSize( X, Y ) )
+    --// app logo. Upstream used the wxBitmap():ConvertToImage() idiom
+    --// to obtain an empty wxImage; that's wxLua-2.8-tolerant but
+    --// trips a wxDIB::Create() assert in wxLua 3.x because the
+    --// empty wxBitmap is invalid by construction. wxImage() is the
+    --// direct constructor.
+    local img_applogo = wx.wxImage()
+    img_applogo:LoadFile( files[ "res" ][ "png_applogo" ] )
+    control = wx.wxStaticBitmap( di, wx.wxID_ANY, wx.wxBitmap( img_applogo ), wx.wxPoint( 0, 5 ), wx.wxSize( img_applogo:GetWidth(), img_applogo:GetHeight() ) )
     control:Centre( wx.wxHORIZONTAL )
-    bmp_applogo:Destroy()
+    img_applogo:Destroy()
 
     --// app name / version
     control = wx.wxStaticText(
@@ -456,18 +481,18 @@ local show_about_window = function( frame )
     control:SetFont( about_normal_2 )
     control:Centre( wx.wxHORIZONTAL )
 
-    --// gpl logo
-    local gpl_logo = wx.wxBitmap():ConvertToImage()
-    gpl_logo:LoadFile( files[ "res" ][ "png_gpl" ] )
+    --// gpl logo. Same wxLua-3.x-compatible idiom as the app logo above.
+    local img_gpl_logo = wx.wxImage()
+    img_gpl_logo:LoadFile( files[ "res" ][ "png_gpl" ] )
     control = wx.wxStaticBitmap(
         di,
         wx.wxID_ANY,
-        wx.wxBitmap( gpl_logo ),
+        wx.wxBitmap( img_gpl_logo ),
         wx.wxPoint( 0, 215 ),
-        wx.wxSize( gpl_logo:GetWidth(), gpl_logo:GetHeight() )
+        wx.wxSize( img_gpl_logo:GetWidth(), img_gpl_logo:GetHeight() )
     )
     control:Centre( wx.wxHORIZONTAL )
-    gpl_logo:Destroy()
+    img_gpl_logo:Destroy()
 
     --// horizontal line
     control = wx.wxStaticLine( di, wx.wxID_ANY, wx.wxPoint( 0, 310 ), wx.wxSize( 275, 1 ) )
@@ -798,47 +823,59 @@ local save_cfg_values = function( log_window, control_bot_desc, control_bot_shar
     log_broadcast( log_window, "Saved data to: '" .. files[ "tbl" ][ "cfg" ] .. "'" )
 end
 
---// set values from "cfg/sslparams.lua"
+--// set values from "cfg/sslparams.lua".
+--// luadch-ng is TLSv1.3-only by design (luadch core/cfg_defaults.lua:3522),
+--// so the RadioBox carries only the TLSv1.3 entry at index 0. Legacy
+--// `tlsv1` / `tlsv1_2` configs map onto the same index since there's
+--// nowhere else to land them; the GUI implicitly upgrades on next
+--// save. To restore the legacy modes uncomment the RadioBox entries
+--// below AND the branches here.
 local set_sslparams_value = function( log_window, control )
     local protocol = tables[ "sslparams" ].protocol
-    if protocol == "tlsv1" then
-        -- TLSv1
+    -- if protocol == "tlsv1"   then control:SetSelection( 0 )     -- TLSv1   (legacy)
+    -- elseif protocol == "tlsv1_2" then control:SetSelection( 1 ) -- TLSv1.2 (legacy)
+    -- elseif protocol == "tlsv1_3" then control:SetSelection( 2 ) -- TLSv1.3 (when legacy modes are restored)
+    if protocol == "tlsv1_3" then
         control:SetSelection( 0 )
-    elseif protocol == "tlsv1_2" then
-        -- TLSv1.2
-        control:SetSelection( 1 )
-    elseif protocol == "tlsv1_3" then
-        -- TLSv1.3
-        control:SetSelection( 2 )
+    else
+        --// Legacy / unknown protocol -> default to the only available
+        --// modern option, TLSv1.3.
+        control:SetSelection( 0 )
     end
     log_broadcast( log_window, "Import data from: '" .. files[ "tbl" ][ "sslparams" ] .. "'" )
 end
 
---// save values to "cfg/sslparams.lua"
+--// save values to "cfg/sslparams.lua".
+--// luadch-ng is TLSv1.3-only by design (luadch core/cfg_defaults.lua:3522),
+--// so only the TLSv1.3 branch is wired up. The legacy TLSv1 / TLSv1.2
+--// tables and branches are kept here as commented-out documentation so
+--// they can be restored together with the matching RadioBox entries
+--// when needed (non-luadch-ng peer, legacy hub, etc.).
 local save_sslparams_values = function( log_window, control )
     local mode = control:GetSelection()
-    -- TLSv1
-    local tls1_tbl = {
-        mode = "client",
-        key = "certs/serverkey.pem",
-        certificate = "certs/servercert.pem",
-        protocol = "tlsv1",
-        ciphers = "ECDHE-ECDSA-AES256-SHA:" ..
-                  "ECDHE-RSA-AES256-SHA:" ..
-                  "ECDHE-ECDSA-AES128-SHA:" ..
-                  "ECDHE-RSA-AES128-SHA",
-    }
-    -- TLSv1.2
-    local tls12_tbl = {
-        mode = "client",
-        key = "certs/serverkey.pem",
-        certificate = "certs/servercert.pem",
-        protocol = "tlsv1_2",
-        ciphers = "ECDHE-ECDSA-AES256-GCM-SHA384:" ..
-                  "ECDHE-RSA-AES256-GCM-SHA384:" ..
-                  "ECDHE-ECDSA-AES128-GCM-SHA256:" ..
-                  "ECDHE-RSA-AES128-GCM-SHA256",
-    }
+
+    -- -- TLSv1 (legacy)
+    -- local tls1_tbl = {
+    --     mode = "client",
+    --     key = "certs/serverkey.pem",
+    --     certificate = "certs/servercert.pem",
+    --     protocol = "tlsv1",
+    --     ciphers = "ECDHE-ECDSA-AES256-SHA:" ..
+    --               "ECDHE-RSA-AES256-SHA:" ..
+    --               "ECDHE-ECDSA-AES128-SHA:" ..
+    --               "ECDHE-RSA-AES128-SHA",
+    -- }
+    -- -- TLSv1.2 (legacy)
+    -- local tls12_tbl = {
+    --     mode = "client",
+    --     key = "certs/serverkey.pem",
+    --     certificate = "certs/servercert.pem",
+    --     protocol = "tlsv1_2",
+    --     ciphers = "ECDHE-ECDSA-AES256-GCM-SHA384:" ..
+    --               "ECDHE-RSA-AES256-GCM-SHA384:" ..
+    --               "ECDHE-ECDSA-AES128-GCM-SHA256:" ..
+    --               "ECDHE-RSA-AES128-GCM-SHA256",
+    -- }
     -- TLSv1.3
     local tls13_tbl = {
         mode = "client",
@@ -852,17 +889,11 @@ local save_sslparams_values = function( log_window, control )
     }
 
     if mode == 0 then
-        -- TLSv1
-        util.savetable( tls1_tbl, "sslparams", files[ "tbl" ][ "sslparams" ] )
-        log_broadcast( log_window, "Saved TLSv1 data to: '" .. files[ "tbl" ][ "sslparams" ] .. "'" )
-    elseif mode == 1 then
-        -- TLSv1.2
-        util.savetable( tls12_tbl, "sslparams", files[ "tbl" ][ "sslparams" ] )
-        log_broadcast( log_window, "Saved TLSv1.2 data to: '" .. files[ "tbl" ][ "sslparams" ] .. "'" )
-    elseif mode == 2 then
-        -- TLSv1.3
+        -- TLSv1.3 (currently the only RadioBox entry)
         util.savetable( tls13_tbl, "sslparams", files[ "tbl" ][ "sslparams" ] )
         log_broadcast( log_window, "Saved TLSv1.3 data to: '" .. files[ "tbl" ][ "sslparams" ] .. "'" )
+    -- elseif mode == 1 then -- TLSv1.2 (legacy) -- util.savetable( tls12_tbl, ... )
+    -- elseif mode == 2 then -- TLSv1 (legacy)   -- util.savetable( tls1_tbl,  ... )
     end
 end
 
@@ -1132,11 +1163,14 @@ local integrity_check = function()
         [ "cfg/hub.lua" ] = "file",
         [ "cfg/rules.lua" ] = "file",
         [ "cfg/sslparams.lua" ] = "file",
-        --// Bundled deps (Phase 1 PR-A swapped 5.1 -> 5.4 from hub)
+        --// Bundled deps (Phase 1 PR-A swapped 5.1 -> 5.4 from hub).
+        --// lib/lfs_wx removed in Phase 3 Tier 1 - the Lua-5.1-ABI lfs
+        --// duplicate is no longer needed once the GUI process runs on
+        --// Lua 5.4 + wxLua 3.x; the Tier-2 runtime bundle decides
+        --// which lfs.dll the GUI process loads.
         [ "lib/adclib/adclib.dll" ] = "file",
         [ "lib/basexx/basexx.lua" ] = "file",
         [ "lib/lfs/lfs.dll" ] = "file",
-        [ "lib/lfs_wx/lfs.dll" ] = "file",
         [ "lib/luasec/lua/ssl.lua" ] = "file",
         [ "lib/luasec/ssl/ssl.dll" ] = "file",
         [ "lib/luasocket/lua/ltn12.lua" ] = "file",
@@ -1146,44 +1180,42 @@ local integrity_check = function()
         [ "lib/luasocket/mime/mime.dll" ] = "file",
         [ "lib/luasocket/socket/socket.dll" ] = "file",
         [ "lib/unicode/unicode.lua" ] = "file",
-        --// GUI resources
-        [ "lib/ressources/res1.dll" ] = "file",
-        [ "lib/ressources/res2.dll" ] = "file",
+        --// GUI resources. res1.dll + res2.dll PE icon containers
+        --// dropped in Phase 3 Tier 1 (#15); the 7 icons they held
+        --// ship as PNGs alongside the existing applogo + GPL badge.
+        [ "lib/ressources/png/applogo_16x16.png" ] = "file",
+        [ "lib/ressources/png/applogo_32x32.png" ] = "file",
         [ "lib/ressources/png/applogo_96x96.png" ] = "file",
         [ "lib/ressources/png/GPLv3_160x80.png" ] = "file",
+        [ "lib/ressources/png/tab_0_16x16.png" ] = "file",
+        [ "lib/ressources/png/tab_1_16x16.png" ] = "file",
+        [ "lib/ressources/png/tab_2_16x16.png" ] = "file",
+        [ "lib/ressources/png/tab_3_16x16.png" ] = "file",
+        [ "lib/ressources/png/tab_4_16x16.png" ] = "file",
         --// Spawned worker (Phase 1 PR-C; replaces upstream lib/ressources/client.dll)
         [ "frontends/gui/spawned_worker.lua" ] = "file",
     }
     local path = wx.wxGetCwd() .. "\\"
     local mode, err
     local missing = { }
-    local start, goal = 1 ,0
-    for k, v in pairs( tbl ) do goal = goal + 1 end
 
-    wx.wxBeginBusyCursor()
-
-    local progressDialog = wx.wxProgressDialog(
-        app_name .. " - Integrity Check",
-        "",
-        goal,
-        wx.NULL,
-        wx.wxPD_AUTO_HIDE + wx.wxPD_APP_MODAL + wx.wxPD_SMOOTH
-    )
-    progressDialog:SetSize( wx.wxSize( 600, 130 ) )
-    progressDialog:Centre( wx.wxBOTH )
-
+    --// Silent file existence check. The previous wxProgressDialog UI
+    --// existed in the wxLua-2.8 era to give visual feedback during
+    --// the ~1.2s artificial wxMilliSleep(30) per file - 40 files in
+    --// real time is microseconds, the dialog was theatre. Dropping
+    --// it also removes a wxLua-3.x debug-assert: the
+    --// wxGenericProgressDialog ctor spins up a temporary event loop
+    --// (we run before wx.wxGetApp():MainLoop()), and wxBeginBusyCursor
+    --// + the Update() pump switch the active loop during the dialog's
+    --// lifetime - which trips the assert in
+    --// wxGenericProgressDialog::~wxGenericProgressDialog() under
+    --// wxWidgets 3.x debug builds (e.g. OneLuaPro).
     for k, v in pairs( tbl ) do
         mode, err = lfs.attributes( path .. k, "mode" )
-        progressDialog:Update( start, "Check: '" .. k .. "'" )
         if mode ~= v then
             missing[ k ] = v
         end
-        start = start + 1
-        wx.wxMilliSleep( 30 )
     end
-
-    progressDialog:Destroy()
-    wx.wxEndBusyCursor()
 
     if next( missing ) ~= nil then
         local di = wx.wxDialog(
@@ -1255,8 +1287,7 @@ local taskbar = nil
 local add_taskbar = function( frame, checkbox_trayicon )
     if checkbox_trayicon:IsChecked() then
         taskbar = wx.wxTaskBarIcon()
-        local icon = wx.wxIcon( files[ "res" ][ "icon1" ], 3, 16, 16 )
-        taskbar:SetIcon( icon, app_name .. " " .. _VERSION )
+        taskbar:SetIcon( load_png_icon( files[ "res" ][ "png_app_16x16" ] ), app_name .. " " .. _VERSION )
 
         tb_bmp_about_16x16 = wx.wxArtProvider.GetBitmap( wx.wxART_INFORMATION, wx.wxART_TOOLBAR )
         tb_bmp_exit_16x16  = wx.wxArtProvider.GetBitmap( wx.wxART_QUIT,        wx.wxART_TOOLBAR )
@@ -1776,7 +1807,12 @@ control_keyprint:Connect( wx.wxID_ANY, wx.wxEVT_ENTER_WINDOW, function( event ) 
 control_keyprint:Connect( wx.wxID_ANY, wx.wxEVT_LEAVE_WINDOW, function( event ) sb:SetStatusText( "", 0 ) end )
 
 --//  tsl mode
-control_tls = wx.wxRadioBox( tab_1, id_control_tls, "TLS Mode:", wx.wxPoint( 352, 250 ), wx.wxSize( 83, 60 ), { "TLSv1", "TLSv1.2", "TLSv1.3" }, 1, wx.wxSUNKEN_BORDER )
+--// TLSv1 + TLSv1.2 removed: luadch-ng hub is TLSv1.3-only by design
+--// (luadch core/cfg_defaults.lua:3522 - "TLS-1.3-only by design").
+--// To re-enable the legacy modes against a non-luadch-ng peer, add
+--// the entries back here AND uncomment the matching branches in
+--// set_sslparams_value() + save_sslparams_values() above.
+control_tls = wx.wxRadioBox( tab_1, id_control_tls, "TLS Mode:", wx.wxPoint( 352, 250 ), wx.wxSize( 83, 60 ), { --[["TLSv1", "TLSv1.2",]] "TLSv1.3" }, 1, wx.wxSUNKEN_BORDER )
 
 --// button save
 save_hub = wx.wxButton( tab_1, id_save_hub, "Save", wx.wxPoint( 352, 332 ), wx.wxSize( 83, 25 ) )
@@ -2858,7 +2894,10 @@ local add_rule = function( rules_listview, treebook, t )
     di:Centre( wx.wxBOTH )
 
     --// rulename text
-    local dialog_rule_add_textctrl = wx.wxTextCtrl( di, id_textctrl_add_rule, "", wx.wxPoint( 25, 10 ), wx.wxSize( 230, 20 ), wx.wxSUNKEN_BORDER + wx.wxTE_CENTRE )
+    --// wxTE_PROCESS_ENTER required for the wxEVT_COMMAND_TEXT_ENTER
+    --// handler below (wxLua 3.x asserts otherwise; wxLua 2.8 was
+    --// tolerant of the missing flag).
+    local dialog_rule_add_textctrl = wx.wxTextCtrl( di, id_textctrl_add_rule, "", wx.wxPoint( 25, 10 ), wx.wxSize( 230, 20 ), wx.wxSUNKEN_BORDER + wx.wxTE_CENTRE + wx.wxTE_PROCESS_ENTER )
     dialog_rule_add_textctrl:Connect( wx.wxID_ANY, wx.wxEVT_ENTER_WINDOW, function( event ) sb:SetStatusText( "Choose a rule name", 0 ) end )
     dialog_rule_add_textctrl:Connect( wx.wxID_ANY, wx.wxEVT_LEAVE_WINDOW, function( event ) sb:SetStatusText( "", 0 ) end )
     dialog_rule_add_textctrl:SetBackgroundColour( wx.wxColour( 200, 200, 200 ) )
@@ -3166,7 +3205,9 @@ local add_category = function( categories_listview )
     di:SetBackgroundColour( wx.wxColour( 255, 255, 255 ) )
 
     --// categoryname text
-    local dialog_category_add_textctrl = wx.wxTextCtrl( di, id_textctrl_add_category, "", wx.wxPoint( 25, 10 ), wx.wxSize( 230, 20 ), wx.wxSUNKEN_BORDER + wx.wxTE_CENTRE )
+    --// wxTE_PROCESS_ENTER required for the wxEVT_COMMAND_TEXT_ENTER
+    --// handler below (same fix as the Add-Rule dialog above).
+    local dialog_category_add_textctrl = wx.wxTextCtrl( di, id_textctrl_add_category, "", wx.wxPoint( 25, 10 ), wx.wxSize( 230, 20 ), wx.wxSUNKEN_BORDER + wx.wxTE_CENTRE + wx.wxTE_PROCESS_ENTER )
     dialog_category_add_textctrl:Connect( wx.wxID_ANY, wx.wxEVT_ENTER_WINDOW, function( event ) sb:SetStatusText( "Choose a category name", 0 ) end )
     dialog_category_add_textctrl:Connect( wx.wxID_ANY, wx.wxEVT_LEAVE_WINDOW, function( event ) sb:SetStatusText( "", 0 ) end )
     dialog_category_add_textctrl:SetBackgroundColour( wx.wxColour( 200, 200, 200 ) )
@@ -3777,9 +3818,14 @@ end
 --// MAIN //-------------------------------------------------------------------------------------------------------------------------
 -------------------------------------------------------------------------------------------------------------------------------------
 
+--// Forward-declared upvalues for start_process / stop_process closures.
+--// The actual wxButton instances are bound later (around lines 4080+
+--// and 4103+) once `panel` exists. Upstream wxLua 2.8 used a bare
+--// `wx.wxButton()` ctor here just to satisfy the closure scope; under
+--// wxLua 3.x a parented wxButton constructor is required, so we use
+--// nil placeholders instead.
 local proc
-local start_client = wx.wxButton()
-local stop_client = wx.wxButton()
+local start_client, stop_client
 
 local start_process = function()
     --// Phase 1 PR-C: spawn the bundled lua.exe + the new

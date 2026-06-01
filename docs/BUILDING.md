@@ -45,7 +45,6 @@ build/install/announcer/
   lib/adclib/adclib.dll      ADC tiger-hash module
   lib/basexx/basexx.lua      base32/base64 helpers
   lib/lfs/lfs.dll            LuaFileSystem
-  lib/lfs_wx/lfs.dll         (still Lua-5.1, GUI-only; Phase 3 will replace)
   lib/luasec/{lua/ssl.lua, ssl/ssl.dll}
   lib/luasocket/{lua/*.lua, mime/mime.dll, socket/socket.dll}
   lib/ressources/            GUI assets
@@ -85,9 +84,6 @@ possible.
   `OPENSSL_ROOT_DIR`. If that path doesn't contain
   `libssl-3-x64.dll` / `libcrypto-3-x64.dll` (e.g. a system OpenSSL
   layout), CMake fails with a clear message.
-- `lib/lfs_wx/lfs.dll` is still a Lua-5.1 build (the GUI's separate
-  wxLua-2.8 binary depends on it). Phase 3 will replace this with a
-  modern wxLua-3 GUI on Lua 5.4 + drop the lfs_wx subdir.
 - **Always run from the install dir, not the source tree.** The
   `frontends/gui/Announcer.wx.lua` integrity check (lines ~1108-1139)
   expects the post-install layout - `lib/adclib/adclib.dll`,
