@@ -215,8 +215,11 @@ int hash_pas(lua_State* L)
 
     size_t saltBytes = salt_len * 5 / 8;
     if (saltBytes == 0 || saltBytes > MAX_SALT_BYTES) {
-        return luaL_error(L, "hashpas: salt length %zu out of range",
-                          saltBytes);
+        // %zu is NOT supported by lua_pushfstring in Lua 5.4 (only %s
+        // %d %c %I %f %p %q %U %%). Cast to int + use %d. saltBytes
+        // <= MAX_SALT_BYTES + a small overshoot, fits in int.
+        return luaL_error(L, "hashpas: salt length %d out of range",
+                          (int)saltBytes);
     }
     unsigned char chunk[MAX_SALT_BYTES];
 
@@ -240,8 +243,9 @@ int hash_pas_oldschool(lua_State* L)
 
     size_t saltBytes = salt_len * 5 / 8;
     if (saltBytes == 0 || saltBytes > MAX_SALT_BYTES) {
-        return luaL_error(L, "hasholdpas: salt length %zu out of range",
-                          saltBytes);
+        // Same Lua 5.4 lua_pushfstring %zu unsupported issue as hash_pas.
+        return luaL_error(L, "hasholdpas: salt length %d out of range",
+                          (int)saltBytes);
     }
     unsigned char chunk1[MAX_SALT_BYTES];
     unsigned char chunk2[SIZE];
