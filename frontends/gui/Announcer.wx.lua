@@ -82,7 +82,10 @@ local files = {
     [ "res" ] = {
         [ "icon1" ]         = RES_PATH .. "res1.dll",
         [ "icon2" ]         = RES_PATH .. "res2.dll",
-        [ "client_app" ]    = RES_PATH .. "client.dll",
+        --// client_app entry removed in Phase 1 PR-C - the wxluafrozen
+        --// Lua-5.1 lib/ressources/client.dll is replaced by spawning
+        --// the bundled lua.exe + frontends/gui/spawned_worker.lua
+        --// (see start_process() below).
         [ "png_gpl" ]       = RES_PATH .. "png/GPLv3_160x80.png",
         [ "png_applogo" ]   = RES_PATH .. "png/applogo_96x96.png",
     },
@@ -3779,7 +3782,14 @@ local start_client = wx.wxButton()
 local stop_client = wx.wxButton()
 
 local start_process = function()
-    local cmd = wx.wxGetCwd()  .. "\\" .. files[ "res" ][ "client_app" ]
+    --// Phase 1 PR-C: spawn the bundled lua.exe + the new
+    --// spawned-worker Lua script. Replaces the upstream's
+    --// "lib/ressources/client.dll" wxluafrozen Lua-5.1 bundle
+    --// (deleted in this PR). The worker registers the
+    --// events.on("status", ...) handler that writes core/status.lua
+    --// for THIS GUI to poll.
+    local cwd = wx.wxGetCwd()
+    local cmd = '"' .. cwd .. '\\lua.exe" "' .. cwd .. '\\frontends\\gui\\spawned_worker.lua"'
 
     ---------------------------------------------------------------------------------------------------------------------------------
 
