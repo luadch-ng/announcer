@@ -288,11 +288,24 @@ PR-A (this PR, "CMake scaffold + vendor C deps + Windows in-tree build"):
 - `BUNDLED.md` restructured: now documents in-tree vendor provenance +
   per-dep sync policy, not committed binary blobs.
 
-PR-B (queued): Linux build verification + `.so` / `.dylib` production.
-The CMakeLists is already portable; what's missing is CI verification.
-
-PR-C (queued): GitHub Actions matrix for build + smoke on Linux + Windows.
-Publish release zips with pre-built artefacts.
+PR-B + PR-C (this PR, "GitHub Actions matrix: Linux + Windows
+build, smoke, release"):
+- `.github/workflows/smoke.yml` builds on `ubuntu-latest` and
+  `windows-latest` (msys2 UCRT64) on every push + PR. Verifies the
+  install layout shape (lua.exe / lua.dll / lib/<dep>/<artefact>
+  present, cfg/id.lua NOT present), then runs a bootstrap-chain
+  smoke: dofile core/init.lua from the install dir + assert the
+  expected ssl.newcontext failure path. Catches ABI mismatches and
+  CMake install regressions.
+- `.github/workflows/release.yml` builds on tag push (`v*`) and on
+  `release/*` branch push (dry-run), packages
+  `announcer-<tag>-linux-x86_64.tar.gz` +
+  `announcer-<tag>-windows-x86_64.zip`, attaches both as GitHub
+  release assets for end users who want no-build artefacts.
+- Linux portability of the vendored CMakeLists is verified by the
+  smoke matrix (PR-B's original "Linux build verification" goal).
+  Hub's CMake builds cleanly on Linux today; the announcer's
+  vendor-1:1 inherits that portability.
 
 PR-D (queued): the 2 TODO(phase-2) source markers in `core/init.lua`
 (`./lib/...` cpath anchoring vs CWD; drop dead `lib/jit/?.lua` path).
