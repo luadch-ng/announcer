@@ -39,6 +39,17 @@ None as of Phase 3 Tier 1. The previous entries here were:
 - `lib/lfs_wx/lfs.dll` (Lua-5.1 build for the wxLua 2.8 GUI) - removed in Phase 3 Tier 1. The Tier-2 runtime bundle decides which `lfs.dll` the GUI process loads.
 - `lib/ressources/res{1,2}.dll` (wxLua 2.8 PE icon containers) - removed in Phase 3 Tier 1. The 7 icons they held now ship as PNGs under `lib/ressources/png/` and are loaded via the existing `wxBitmap(path, wxBITMAP_TYPE_PNG)` pattern.
 
+## Vendored as git submodule (Phase 3 Tier 2)
+
+One dep is too large to commit in-tree without bloating the repo:
+
+| Submodule  | Version | URL                              | Why submodule (not in-tree) |
+|------------|---------|----------------------------------|-----------------------------|
+| `wxwidgets/` | v3.2.10 | github.com/wxWidgets/wxWidgets   | ~80 MB source. In-tree would balloon the repo. Submodule = source-only-promise intact (still source, just pinned by SHA). |
+
+**Clone instructions:** `git clone --recurse-submodules <repo>`, or after a plain
+clone: `git submodule update --init --recursive`. CI does this automatically.
+
 ## Bundled GUI assets (source artefacts, not pre-built binaries)
 
 | File                                       | Purpose                                                |
