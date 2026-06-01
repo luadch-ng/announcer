@@ -67,7 +67,8 @@ loadtable = function( path )
     end
     local content = file:read "*a"
     file:close( )
-    local chunk, err = loadstring( content )
+    -- Lua 5.4: `loadstring` removed; `load` accepts a string directly.
+    local chunk, err = load( content )
     if chunk then
         local ret = chunk( )
         if ret and type( ret ) == "table" then
