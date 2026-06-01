@@ -1,0 +1,151 @@
+name: Smoke
+
+# Build + smoke on every push and PR. Mirrors the parent
+# luadch-ng/luadch repo's smoke.yml pattern.
+#
+# Smoke "test" here is minimal because the announcer needs a TLS
+# cert + a hub to connect to before net.loop() does anything.
+# What we CAN verify is the full bootstrap chain: dofile core/init.lua
+# successfully loads all C extensions (socket, ssl, basexx, lfs,
+# adclib) under the locally-built lua.exe + lua.dll, and fails at
+# the expected point (ssl.newcontext "error loading private key" -
+# no certs/serverkey.pem). Catches ABI mismatches, missing deps,
+# bad CMake install paths.
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  # Run JavaScript-based actions on Node.js 24 - matches hub's policy.
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
+jobs:
+  smoke-linux:
+    name: Smoke Linux x86_64
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential cmake libssl-dev
+
+      - name: Configure
+        run: cmake -B build -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build
+        run: cmake --build build -j"$(nproc)"
+
+      - name: Install into staging tree
+        run: cmake --install build
+
+      - name: Verify install tree shape
+        run: |
+          test -f build/install/announcer/lua
+          test -f build/install/announcer/liblua.so
+          test -d build/install/announcer/core
+          test -d build/install/announcer/cfg
+          test -d build/install/announcer/certs
+          test -d build/install/announcer/frontends
+          test -f build/install/announcer/lib/adclib/adclib.so
+          test -f build/install/announcer/lib/lfs/lfs.so
+          test -f build/install/announcer/lib/luasec/ssl/ssl.so
+          test -f build/install/announcer/lib/luasocket/socket/socket.so
+          test -f build/install/announcer/lib/luasocket/mime/mime.so
+          test -f build/install/announcer/lib/unicode/unicode.lua
+          test -f build/install/announcer/lib/basexx/basexx.lua
+          test ! -f build/install/announcer/cfg/id.lua  # secret must not be installed
+
+      # Bootstrap-chain smoke: cd into install root, run the built lua
+      # against a tiny harness that dofiles core/init.lua. Expected
+      # outcome is the ssl.newcontext "error loading private key"
+      # failure (certs/serverkey.pem not generated in CI) - that
+      # confirms socket/ssl/basexx/lfs/adclib all required cleanly
+      # AND the announcer's ADC state machine got far enough to ask
+      # for the cert. Any other failure mode is a real regression.
+      - name: Bootstrap-chain smoke
+        run: |
+          cd build/install/announcer
+          ./lua -e '
+            local ok, err = pcall(function() dofile "core/init.lua" end)
+            if not ok and err:match("error loading private key") then
+              print("SMOKE OK: bootstrap chain reaches ssl.newcontext")
+              os.exit(0)
+            elseif ok then
+              print("SMOKE OK: bootstrap chain ran clean (unexpected but not a failure)")
+              os.exit(0)
+            else
+              io.stderr:write("SMOKE FAIL: "..tostring(err).."\n")
+              os.exit(1)
+            end
+          '
+
+  smoke-windows:
+    name: Smoke Windows x86_64 (MinGW UCRT64)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: msys2/setup-msys2@v2
+        with:
+          msystem: UCRT64
+          update: true
+          install: >-
+            mingw-w64-ucrt-x86_64-gcc
+            mingw-w64-ucrt-x86_64-cmake
+            mingw-w64-ucrt-x86_64-make
+            mingw-w64-ucrt-x86_64-openssl
+
+      - name: Configure
+        shell: msys2 {0}
+        run: cmake -B build -G "MinGW Makefiles" -DCMAKE_BUILD_TYPE=Release -DOPENSSL_ROOT_DIR=/ucrt64
+
+      - name: Build
+        shell: msys2 {0}
+        run: cmake --build build -j
+
+      - name: Install into staging tree
+        shell: msys2 {0}
+        run: cmake --install build
+
+      - name: Verify install tree shape
+        shell: msys2 {0}
+        run: |
+          test -f build/install/announcer/lua.exe
+          test -f build/install/announcer/lua.dll
+          test -d build/install/announcer/core
+          test -d build/install/announcer/cfg
+          test -d build/install/announcer/certs
+          test -d build/install/announcer/frontends
+          test -f build/install/announcer/lib/adclib/adclib.dll
+          test -f build/install/announcer/lib/lfs/lfs.dll
+          test -f build/install/announcer/lib/luasec/ssl/ssl.dll
+          test -f build/install/announcer/lib/luasocket/socket/socket.dll
+          test -f build/install/announcer/lib/luasocket/mime/mime.dll
+          test -f build/install/announcer/lib/unicode/unicode.lua
+          test -f build/install/announcer/lib/basexx/basexx.lua
+          test ! -f build/install/announcer/cfg/id.lua  # secret must not be installed
+
+      - name: Bootstrap-chain smoke
+        shell: msys2 {0}
+        run: |
+          cd build/install/announcer
+          ./lua.exe -e '
+            local ok, err = pcall(function() dofile "core/init.lua" end)
+            if not ok and err:match("error loading private key") then
+              print("SMOKE OK: bootstrap chain reaches ssl.newcontext")
+              os.exit(0)
+            elseif ok then
+              print("SMOKE OK: bootstrap chain ran clean (unexpected but not a failure)")
+              os.exit(0)
+            else
+              io.stderr:write("SMOKE FAIL: "..tostring(err).."\n")
+              os.exit(1)
+            end
+          '

@@ -1,0 +1,171 @@
+name: Release
+
+# Build + package release artefacts on tag push (or release/* branch
+# push for dry-run). Mirrors the parent luadch-ng/luadch repo's
+# release.yml pattern.
+#
+# Triggers:
+#   - push of tag `v*`              -> build + create GitHub release with assets
+#   - push to `release/*` branch    -> build only (no release; pipeline verification)
+#   - workflow_dispatch             -> build with operator-supplied tag (manual test)
+
+on:
+  push:
+    tags:
+      - 'v*'
+    branches:
+      - 'release/**'
+  workflow_dispatch:
+    inputs:
+      tag_name:
+        description: 'Tag name for filename (used only for manual test runs; no GitHub release is created without a real tag push)'
+        required: false
+        default: 'v0.0.0-test'
+
+permissions:
+  contents: write
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
+jobs:
+  build-linux:
+    name: Build Linux x86_64
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential cmake libssl-dev
+
+      - name: Configure
+        run: cmake -B build -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build
+        run: cmake --build build -j"$(nproc)"
+
+      - name: Install into staging tree
+        run: cmake --install build
+
+      - name: Verify install tree
+        run: |
+          test -f build/install/announcer/lua
+          test -f build/install/announcer/liblua.so
+          test -d build/install/announcer/core
+          test -d build/install/announcer/cfg
+          test -d build/install/announcer/certs
+          test -d build/install/announcer/frontends
+
+      - name: Determine version tag
+        id: tag
+        run: |
+          if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
+            TAG="${GITHUB_REF_NAME}"
+          elif [ "${GITHUB_EVENT_NAME}" = "workflow_dispatch" ]; then
+            TAG="${{ github.event.inputs.tag_name }}"
+          else
+            # Branch push: derive "vX.Y.Z-dev" from a "release/vX.Y.Z" branch.
+            BRANCH="${GITHUB_REF_NAME}"
+            TAG="${BRANCH#release/}-dev"
+          fi
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+
+      - name: Package
+        run: tar czf "announcer-${{ steps.tag.outputs.tag }}-linux-x86_64.tar.gz" -C build/install announcer
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: announcer-linux-x86_64
+          path: announcer-*-linux-x86_64.tar.gz
+          if-no-files-found: error
+
+  build-windows:
+    name: Build Windows x86_64 (MinGW UCRT64)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: msys2/setup-msys2@v2
+        with:
+          msystem: UCRT64
+          update: true
+          install: >-
+            mingw-w64-ucrt-x86_64-gcc
+            mingw-w64-ucrt-x86_64-cmake
+            mingw-w64-ucrt-x86_64-make
+            mingw-w64-ucrt-x86_64-openssl
+            zip
+
+      - name: Configure
+        shell: msys2 {0}
+        run: cmake -B build -G "MinGW Makefiles" -DCMAKE_BUILD_TYPE=Release -DOPENSSL_ROOT_DIR=/ucrt64
+
+      - name: Build
+        shell: msys2 {0}
+        run: cmake --build build -j
+
+      - name: Install into staging tree
+        shell: msys2 {0}
+        run: cmake --install build
+
+      - name: Verify install tree
+        shell: msys2 {0}
+        run: |
+          test -f build/install/announcer/lua.exe
+          test -f build/install/announcer/lua.dll
+          test -d build/install/announcer/core
+          test -d build/install/announcer/cfg
+          test -d build/install/announcer/certs
+          test -d build/install/announcer/frontends
+
+      - name: Determine version tag
+        id: tag
+        shell: msys2 {0}
+        run: |
+          if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
+            TAG="${GITHUB_REF_NAME}"
+          elif [ "${GITHUB_EVENT_NAME}" = "workflow_dispatch" ]; then
+            TAG="${{ github.event.inputs.tag_name }}"
+          else
+            BRANCH="${GITHUB_REF_NAME}"
+            TAG="${BRANCH#release/}-dev"
+          fi
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+
+      - name: Package
+        shell: msys2 {0}
+        run: |
+          cd build/install
+          zip -r "../../announcer-${{ steps.tag.outputs.tag }}-windows-x86_64.zip" announcer
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: announcer-windows-x86_64
+          path: announcer-*-windows-x86_64.zip
+          if-no-files-found: error
+
+  release:
+    name: Create GitHub release
+    needs: [build-linux, build-windows]
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Move artefacts to root
+        run: |
+          mv artifacts/announcer-linux-x86_64/*.tar.gz .
+          mv artifacts/announcer-windows-x86_64/*.zip .
+          ls -la
+
+      - name: Create release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            announcer-*-linux-x86_64.tar.gz
+            announcer-*-windows-x86_64.zip
+          fail_on_unmatched_files: true
