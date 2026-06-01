@@ -14,20 +14,18 @@
 --// IMPORTS //----------------------------------------------------------------------------------------------------------------------
 -------------------------------------------------------------------------------------------------------------------------------------
 
-local filetype = ( os.getenv( "COMSPEC" ) and os.getenv( "WINDIR" and ".dll" ) ) or ".so"
+local filetype = ( os.getenv( "COMSPEC" ) and os.getenv( "WINDIR" ) and ".dll" ) or ".so"
 
 package.path = package.path .. ";"
     .. "././core/?.lua;"
     .. "././lib/?/?.lua;"
     .. "././lib/luasocket/lua/?.lua;"
     .. "././lib/luasec/lua/?.lua;"
-    .. "././lib/jit/?.lua;"
 
 package.cpath = package.cpath .. ";"
     .. "././lib/?/?" .. filetype .. ";"
     .. "././lib/luasocket/?/?" .. filetype .. ";"
     .. "././lib/luasec/?/?" .. filetype .. ";"
-    .. "././lib/lfs_wx/?" .. ".dll" .. ";"
 
 dofile( "core/const.lua" )
 
@@ -35,6 +33,12 @@ dofile( "core/const.lua" )
 local wx   = require( "wx" )
 local util = require( CORE_PATH .. "util" )
 local lfs  = require( "lfs" )
+
+--// Ensure PNG image handler is registered before any wxImage:LoadFile()
+--// call. wxWidgets 3.x normally pre-registers standard handlers, but
+--// being explicit makes the dependency obvious and survives any future
+--// wx build that compiles handlers conditionally.
+wx.wxImage.AddHandler( wx.wxPNGHandler() )
 
 --// defaults
 local control
@@ -80,14 +84,23 @@ local files = {
         [ "status" ]        = CORE_PATH .. "status.lua",
     },
     [ "res" ] = {
-        [ "icon1" ]         = RES_PATH .. "res1.dll",
-        [ "icon2" ]         = RES_PATH .. "res2.dll",
         --// client_app entry removed in Phase 1 PR-C - the wxluafrozen
         --// Lua-5.1 lib/ressources/client.dll is replaced by spawning
         --// the bundled lua.exe + frontends/gui/spawned_worker.lua
         --// (see start_process() below).
-        [ "png_gpl" ]       = RES_PATH .. "png/GPLv3_160x80.png",
-        [ "png_applogo" ]   = RES_PATH .. "png/applogo_96x96.png",
+        --// res1.dll + res2.dll PE icon containers removed in Phase 3
+        --// Tier 1 (#15); the wxLua 3.x port cannot extract PE-resource
+        --// icons with the wxLua-2.8 frozen-distribution shortcut, so we
+        --// ship the same 7 icons as PNG files instead.
+        [ "png_gpl" ]            = RES_PATH .. "png/GPLv3_160x80.png",
+        [ "png_applogo" ]        = RES_PATH .. "png/applogo_96x96.png",
+        [ "png_app_16x16" ]      = RES_PATH .. "png/applogo_16x16.png",
+        [ "png_app_32x32" ]      = RES_PATH .. "png/applogo_32x32.png",
+        [ "png_tab_0_16x16" ]    = RES_PATH .. "png/tab_0_16x16.png",
+        [ "png_tab_1_16x16" ]    = RES_PATH .. "png/tab_1_16x16.png",
+        [ "png_tab_2_16x16" ]    = RES_PATH .. "png/tab_2_16x16.png",
+        [ "png_tab_3_16x16" ]    = RES_PATH .. "png/tab_3_16x16.png",
+        [ "png_tab_4_16x16" ]    = RES_PATH .. "png/tab_4_16x16.png",
     },
     [ "log" ] = {
         [ "announced" ]     = LOG_PATH .. "announced.txt",
@@ -260,10 +273,24 @@ local about_bold = wx.wxFont( 10, wx.wxMODERN, wx.wxNORMAL, wx.wxFONTWEIGHT_BOLD
 --// ICONS //------------------------------------------------------------------------------------------------------------------------
 -------------------------------------------------------------------------------------------------------------------------------------
 
+--// Helpers to load PNG resources. wxLua 3.x has no PE-icon-extraction
+--// shortcut on Windows so the icons that the wxLua-2.8 build pulled
+--// from res1.dll / res2.dll are now bundled as PNG files in
+--// lib/ressources/png/ (extracted once via wxLua itself in Phase 3
+--// Tier 1, see commit message).
+local function load_png_bitmap( path )
+    return wx.wxBitmap( path, wx.wxBITMAP_TYPE_PNG )
+end
+local function load_png_icon( path )
+    local ico = wx.wxIcon()
+    ico:CopyFromBitmap( load_png_bitmap( path ) )
+    return ico
+end
+
 --// icons for app titlebar and taskbar
 local icons = wx.wxIconBundle()
-icons:AddIcon( wx.wxIcon( files[ "res" ][ "icon1" ], 3, 16, 16 ) )
-icons:AddIcon( wx.wxIcon( files[ "res" ][ "icon1" ], 3, 32, 32 ) )
+icons:AddIcon( load_png_icon( files[ "res" ][ "png_app_16x16" ] ) )
+icons:AddIcon( load_png_icon( files[ "res" ][ "png_app_32x32" ] ) )
 
 --// icons for menubar
 local mb_bmp_about_16x16 = wx.wxArtProvider.GetBitmap( wx.wxART_INFORMATION, wx.wxART_TOOLBAR )
@@ -273,28 +300,23 @@ local mb_bmp_exit_16x16  = wx.wxArtProvider.GetBitmap( wx.wxART_QUIT,        wx.
 local tb_bmp_about_16x16 = wx.wxArtProvider.GetBitmap( wx.wxART_INFORMATION, wx.wxART_TOOLBAR )
 local tb_bmp_exit_16x16  = wx.wxArtProvider.GetBitmap( wx.wxART_QUIT,        wx.wxART_TOOLBAR )
 
---// icons for tabs
-local tab_1_ico = wx.wxIcon( files[ "res" ][ "icon2" ] .. ";0", wx.wxBITMAP_TYPE_ICO, 16, 16 )
-local tab_2_ico = wx.wxIcon( files[ "res" ][ "icon2" ] .. ";1", wx.wxBITMAP_TYPE_ICO, 16, 16 )
-local tab_3_ico = wx.wxIcon( files[ "res" ][ "icon2" ] .. ";2", wx.wxBITMAP_TYPE_ICO, 16, 16 )
-local tab_4_ico = wx.wxIcon( files[ "res" ][ "icon2" ] .. ";3", wx.wxBITMAP_TYPE_ICO, 16, 16 )
-local tab_5_ico = wx.wxIcon( files[ "res" ][ "icon2" ] .. ";3", wx.wxBITMAP_TYPE_ICO, 16, 16 )
-local tab_6_ico = wx.wxIcon( files[ "res" ][ "icon2" ] .. ";4", wx.wxBITMAP_TYPE_ICO, 16, 16 )
-
-tab_1_bmp = wx.wxBitmap(); tab_1_bmp:CopyFromIcon( tab_1_ico )
-tab_2_bmp = wx.wxBitmap(); tab_2_bmp:CopyFromIcon( tab_2_ico )
-tab_3_bmp = wx.wxBitmap(); tab_3_bmp:CopyFromIcon( tab_3_ico )
-tab_4_bmp = wx.wxBitmap(); tab_4_bmp:CopyFromIcon( tab_4_ico )
-tab_5_bmp = wx.wxBitmap(); tab_5_bmp:CopyFromIcon( tab_5_ico )
-tab_6_bmp = wx.wxBitmap(); tab_6_bmp:CopyFromIcon( tab_6_ico )
+--// icons for tabs. tab_5 deliberately reuses tab_3's PNG to match
+--// the upstream wxLua-2.8 behaviour (res2.dll ;3 was referenced by
+--// both tab_4 and tab_5 - the duplication is by design, not a typo).
+local tab_1_bmp = load_png_bitmap( files[ "res" ][ "png_tab_0_16x16" ] )
+local tab_2_bmp = load_png_bitmap( files[ "res" ][ "png_tab_1_16x16" ] )
+local tab_3_bmp = load_png_bitmap( files[ "res" ][ "png_tab_2_16x16" ] )
+local tab_4_bmp = load_png_bitmap( files[ "res" ][ "png_tab_3_16x16" ] )
+local tab_5_bmp = load_png_bitmap( files[ "res" ][ "png_tab_3_16x16" ] )
+local tab_6_bmp = load_png_bitmap( files[ "res" ][ "png_tab_4_16x16" ] )
 
 notebook_image_list = wx.wxImageList( 16, 16 )
-notebook_image_list:Add( wx.wxBitmap( tab_1_bmp ) )
-notebook_image_list:Add( wx.wxBitmap( tab_2_bmp ) )
-notebook_image_list:Add( wx.wxBitmap( tab_3_bmp ) )
-notebook_image_list:Add( wx.wxBitmap( tab_4_bmp ) )
-notebook_image_list:Add( wx.wxBitmap( tab_5_bmp ) )
-notebook_image_list:Add( wx.wxBitmap( tab_6_bmp ) )
+notebook_image_list:Add( tab_1_bmp )
+notebook_image_list:Add( tab_2_bmp )
+notebook_image_list:Add( tab_3_bmp )
+notebook_image_list:Add( tab_4_bmp )
+notebook_image_list:Add( tab_5_bmp )
+notebook_image_list:Add( tab_6_bmp )
 
 -------------------------------------------------------------------------------------------------------------------------------------
 --// CREATE LOG BROADCAST FUNCTION //------------------------------------------------------------------------------------------------
@@ -1132,11 +1154,14 @@ local integrity_check = function()
         [ "cfg/hub.lua" ] = "file",
         [ "cfg/rules.lua" ] = "file",
         [ "cfg/sslparams.lua" ] = "file",
-        --// Bundled deps (Phase 1 PR-A swapped 5.1 -> 5.4 from hub)
+        --// Bundled deps (Phase 1 PR-A swapped 5.1 -> 5.4 from hub).
+        --// lib/lfs_wx removed in Phase 3 Tier 1 - the Lua-5.1-ABI lfs
+        --// duplicate is no longer needed once the GUI process runs on
+        --// Lua 5.4 + wxLua 3.x; the Tier-2 runtime bundle decides
+        --// which lfs.dll the GUI process loads.
         [ "lib/adclib/adclib.dll" ] = "file",
         [ "lib/basexx/basexx.lua" ] = "file",
         [ "lib/lfs/lfs.dll" ] = "file",
-        [ "lib/lfs_wx/lfs.dll" ] = "file",
         [ "lib/luasec/lua/ssl.lua" ] = "file",
         [ "lib/luasec/ssl/ssl.dll" ] = "file",
         [ "lib/luasocket/lua/ltn12.lua" ] = "file",
@@ -1146,11 +1171,18 @@ local integrity_check = function()
         [ "lib/luasocket/mime/mime.dll" ] = "file",
         [ "lib/luasocket/socket/socket.dll" ] = "file",
         [ "lib/unicode/unicode.lua" ] = "file",
-        --// GUI resources
-        [ "lib/ressources/res1.dll" ] = "file",
-        [ "lib/ressources/res2.dll" ] = "file",
+        --// GUI resources. res1.dll + res2.dll PE icon containers
+        --// dropped in Phase 3 Tier 1 (#15); the 7 icons they held
+        --// ship as PNGs alongside the existing applogo + GPL badge.
+        [ "lib/ressources/png/applogo_16x16.png" ] = "file",
+        [ "lib/ressources/png/applogo_32x32.png" ] = "file",
         [ "lib/ressources/png/applogo_96x96.png" ] = "file",
         [ "lib/ressources/png/GPLv3_160x80.png" ] = "file",
+        [ "lib/ressources/png/tab_0_16x16.png" ] = "file",
+        [ "lib/ressources/png/tab_1_16x16.png" ] = "file",
+        [ "lib/ressources/png/tab_2_16x16.png" ] = "file",
+        [ "lib/ressources/png/tab_3_16x16.png" ] = "file",
+        [ "lib/ressources/png/tab_4_16x16.png" ] = "file",
         --// Spawned worker (Phase 1 PR-C; replaces upstream lib/ressources/client.dll)
         [ "frontends/gui/spawned_worker.lua" ] = "file",
     }
@@ -1255,8 +1287,7 @@ local taskbar = nil
 local add_taskbar = function( frame, checkbox_trayicon )
     if checkbox_trayicon:IsChecked() then
         taskbar = wx.wxTaskBarIcon()
-        local icon = wx.wxIcon( files[ "res" ][ "icon1" ], 3, 16, 16 )
-        taskbar:SetIcon( icon, app_name .. " " .. _VERSION )
+        taskbar:SetIcon( load_png_icon( files[ "res" ][ "png_app_16x16" ] ), app_name .. " " .. _VERSION )
 
         tb_bmp_about_16x16 = wx.wxArtProvider.GetBitmap( wx.wxART_INFORMATION, wx.wxART_TOOLBAR )
         tb_bmp_exit_16x16  = wx.wxArtProvider.GetBitmap( wx.wxART_QUIT,        wx.wxART_TOOLBAR )

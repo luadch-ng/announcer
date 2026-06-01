@@ -55,10 +55,8 @@ basexx/       Pure-Lua base32/base64 (vendored from hub).
 slnunicode/   Pure-Lua utf-8 shim (vendored from hub).
 CMakeLists.txt + per-dep CMakeLists.txt in each source dir.
 
---- Committed binaries still in source tree (Phase 2 transitional) ---
-lib/lfs_wx/lfs.dll       Lua-5.1 build used by the wxLua-2.8 GUI; Phase 3 replaces.
-lib/ressources/*.dll     wxLua icon-resource bundles; Phase 2 PR-E replaces with PNG.
-lib/ressources/png/*.png GUI app icon + license-badge PNGs.
+--- GUI assets ---
+lib/ressources/png/*.png GUI app icon (3 sizes), license badge, 5 tab icons.
 
 --- Other ---
 certs/        OpenSSL cert-generation scripts (.bat + .sh).

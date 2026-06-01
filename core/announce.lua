@@ -10,7 +10,6 @@ package.path = package.path .. ";"
     .. "././lib/?/?.lua;"
     .. "././lib/luasocket/lua/?.lua;"
     .. "././lib/luasec/lua/?.lua;"
-    .. "././lib/jit/?.lua;"
 
 package.cpath = package.cpath .. ";"
     .. "././lib/?/?" .. ".dll" .. ";"

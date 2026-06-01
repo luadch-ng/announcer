@@ -34,12 +34,18 @@ Produced by the CMake build (NOT committed in the source tree):
 
 ## Committed binaries that remain (not yet CMake-built)
 
-| File                          | Reason still committed                                                                           |
-|-------------------------------|--------------------------------------------------------------------------------------------------|
-| `lib/lfs_wx/lfs.dll`          | Lua-5.1 build used by the wxLua-2.8 GUI. Phase 3 GUI rework on wxLua 3.x will replace this.       |
-| `lib/ressources/res1.dll`     | wxLua 2.8 icon-resource bundle. Phase 2 PR-E will replace with sourced-from-PNG resource loading. |
-| `lib/ressources/res2.dll`     | Same.                                                                                            |
-| `lib/ressources/png/*.png`    | App icon + license-badge PNGs. Stay; PR-E will use them directly.                                |
+None as of Phase 3 Tier 1. The previous entries here were:
+
+- `lib/lfs_wx/lfs.dll` (Lua-5.1 build for the wxLua 2.8 GUI) - removed in Phase 3 Tier 1. The Tier-2 runtime bundle decides which `lfs.dll` the GUI process loads.
+- `lib/ressources/res{1,2}.dll` (wxLua 2.8 PE icon containers) - removed in Phase 3 Tier 1. The 7 icons they held now ship as PNGs under `lib/ressources/png/` and are loaded via the existing `wxBitmap(path, wxBITMAP_TYPE_PNG)` pattern.
+
+## Bundled GUI assets (source artefacts, not pre-built binaries)
+
+| File                                       | Purpose                                                |
+|--------------------------------------------|--------------------------------------------------------|
+| `lib/ressources/png/applogo_{16,32,96}x*.png` | Window / taskbar / About-dialog app icon, 3 sizes      |
+| `lib/ressources/png/GPLv3_160x80.png`         | License badge in About dialog                          |
+| `lib/ressources/png/tab_{0..4}_16x16.png`     | Notebook tab icons (5 unique; tab_5 reuses tab_3 by design) |
 
 ## Sync policy
 

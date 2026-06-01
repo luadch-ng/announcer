@@ -91,10 +91,10 @@ install(DIRECTORY cfg/         DESTINATION cfg PATTERN "id.lua" EXCLUDE)
 install(DIRECTORY certs/       DESTINATION certs)
 install(DIRECTORY frontends/   DESTINATION frontends)
 
-# GUI's separate wxLua lfs build (still 5.1 - Phase 3 GUI rework replaces)
-install(DIRECTORY lib/lfs_wx/  DESTINATION lib/lfs_wx)
-
-# GUI resource bundles (.dll + .png; Phase 2 PR-E will convert .dll -> PNG)
+# GUI resources (PNG icons + GPL badge). The lib/lfs_wx Lua-5.1-ABI lfs
+# duplicate and the lib/ressources/res{1,2}.dll PE-icon containers were
+# removed in Phase 3 Tier 1 (#15); the GUI now loads icons from PNG and
+# the Tier-2 runtime bundle ships its own lfs.dll for the GUI process.
 install(DIRECTORY lib/ressources/ DESTINATION lib/ressources)
 
 # Empty log dir (the announcer writes log files here at runtime)
