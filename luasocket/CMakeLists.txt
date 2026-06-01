@@ -1,0 +1,123 @@
+# Build the LuaSocket plugins (socket, mime) and a small static helper
+# library used by luasec.
+#
+# This replaces the *.c.not rename trick from compile_with_mingw.bat by
+# using per-platform source lists directly.
+#
+# Outputs:
+#   lib/luasocket/socket/socket.so / .dll       (C module)
+#   lib/luasocket/mime/mime.so   / .dll         (C module)
+#   plus the Lua-side helpers under lib/luasocket/lua/, in the canonical
+#   LuaSocket layout (closes luadch-ng/luadch#88):
+#     lib/luasocket/lua/socket.lua              (entrypoint)
+#     lib/luasocket/lua/mime.lua    , ltn12.lua , mbox.lua  (top-level helpers)
+#     lib/luasocket/lua/socket/http.lua   , url.lua  , headers.lua
+#     lib/luasocket/lua/socket/ftp.lua    , smtp.lua , tp.lua
+#   so plugins can `require "socket.http"` / `require "ssl.https"` per the
+#   standard Lua convention; http.lua's own internal `require "socket.url"`
+#   etc. resolve in the same layout.
+
+set(LSOCKET_SRC ${CMAKE_CURRENT_SOURCE_DIR}/src)
+
+# ---- common (used by socket plugin AND luasec's static linker) -------------
+set(LSOCKET_COMMON_SOURCES
+    ${LSOCKET_SRC}/io.c
+    ${LSOCKET_SRC}/buffer.c
+    ${LSOCKET_SRC}/timeout.c
+    ${LSOCKET_SRC}/compat.c
+)
+
+# ---- socket plugin (cross-platform pieces + per-platform sockets) ----------
+set(LSOCKET_CORE_SOURCES
+    ${LSOCKET_SRC}/luasocket.c
+    ${LSOCKET_SRC}/auxiliar.c
+    ${LSOCKET_SRC}/options.c
+    ${LSOCKET_SRC}/inet.c
+    ${LSOCKET_SRC}/except.c
+    ${LSOCKET_SRC}/select.c
+    ${LSOCKET_SRC}/tcp.c
+    ${LSOCKET_SRC}/udp.c
+)
+
+if(WIN32)
+    list(APPEND LSOCKET_CORE_SOURCES
+        ${LSOCKET_SRC}/wsocket.c    # Win32 socket layer
+    )
+else()
+    list(APPEND LSOCKET_CORE_SOURCES
+        ${LSOCKET_SRC}/usocket.c       # POSIX socket layer
+        ${LSOCKET_SRC}/serial.c        # serial port (Unix-only)
+        ${LSOCKET_SRC}/unix.c          # Unix-domain socket
+        ${LSOCKET_SRC}/unixstream.c
+        ${LSOCKET_SRC}/unixdgram.c
+    )
+endif()
+
+add_library(socket MODULE
+    ${LSOCKET_COMMON_SOURCES}
+    ${LSOCKET_CORE_SOURCES}
+)
+target_compile_definitions(socket PRIVATE LUASOCKET_NODEBUG LUASOCKET_INET_PTON)
+if(WIN32)
+    target_compile_definitions(socket PRIVATE WINVER=0x0501)
+    target_link_libraries(socket PRIVATE ws2_32)
+endif()
+target_include_directories(socket PRIVATE ${LSOCKET_SRC})
+target_link_libraries(socket PRIVATE lua)
+set_target_properties(socket PROPERTIES PREFIX "")
+if(WIN32)
+    set_target_properties(socket PROPERTIES SUFFIX ".dll")
+endif()
+
+# ---- mime plugin (small, cross-platform) -----------------------------------
+add_library(mime MODULE
+    ${LSOCKET_SRC}/mime.c
+    ${LSOCKET_SRC}/compat.c
+)
+target_include_directories(mime PRIVATE ${LSOCKET_SRC})
+target_link_libraries(mime PRIVATE lua)
+set_target_properties(mime PROPERTIES PREFIX "")
+if(WIN32)
+    set_target_properties(mime PROPERTIES SUFFIX ".dll")
+endif()
+
+# ---- static helper for luasec ----------------------------------------------
+# luasec links against a subset of luasocket's object files (the buffer/io/
+# timeout glue PLUS the platform socket layer — wsocket on Windows, usocket
+# on POSIX) so its TLS sockets share LuaSocket's read/write/wait semantics.
+# We expose this as a static library; luasec's CMakeLists pulls it in.
+set(LSOCKET_STATIC_SOURCES ${LSOCKET_COMMON_SOURCES})
+if(WIN32)
+    list(APPEND LSOCKET_STATIC_SOURCES ${LSOCKET_SRC}/wsocket.c)
+else()
+    list(APPEND LSOCKET_STATIC_SOURCES ${LSOCKET_SRC}/usocket.c)
+endif()
+add_library(luasocket_static STATIC ${LSOCKET_STATIC_SOURCES})
+target_compile_definitions(luasocket_static PRIVATE LUASOCKET_NODEBUG LUASOCKET_INET_PTON)
+if(WIN32)
+    target_compile_definitions(luasocket_static PRIVATE WINVER=0x0501)
+endif()
+target_include_directories(luasocket_static PUBLIC ${LSOCKET_SRC})
+target_link_libraries(luasocket_static PUBLIC lua)
+
+# ---- install ---------------------------------------------------------------
+install(TARGETS socket LIBRARY DESTINATION lib/luasocket/socket
+                       RUNTIME DESTINATION lib/luasocket/socket)
+install(TARGETS mime   LIBRARY DESTINATION lib/luasocket/mime
+                       RUNTIME DESTINATION lib/luasocket/mime)
+
+# Copy the Lua-side helpers into the runtime tree, split into the canonical
+# LuaSocket layout: top-level entrypoints + a nested `socket/` subdir for
+# the `socket.X` submodules. See the header comment for why - closes #88.
+set(LSOCKET_LUA_TOPLEVEL
+    ${LSOCKET_SRC}/socket.lua    # entrypoint loaded by `require "socket"`
+    ${LSOCKET_SRC}/mime.lua      # top-level per LuaSocket convention
+    ${LSOCKET_SRC}/ltn12.lua     # top-level per LuaSocket convention
+    ${LSOCKET_SRC}/mbox.lua      # top-level per LuaSocket convention
+)
+# Announcer-specific (vs hub): only install the top-level helpers.
+# The announcer does not use `require "socket.http"` / .url / .headers /
+# .ftp / .smtp / .tp anywhere - Phase 1 PR-A's audit found ZERO
+# references in the announcer source (only `require "socket"`). Skipping
+# the submodule install keeps the runtime tree trim.
+install(FILES ${LSOCKET_LUA_TOPLEVEL}    DESTINATION lib/luasocket/lua)

@@ -148,20 +148,40 @@ frontends/
                    silent. GUI integration with the events dispatch
                    is Phase 0 follow-up / Phase 1 work.
 
-lib/               Bundled deps (Phase 0 = Win-only binaries)
-  basexx/          Pure-Lua base32/base64 (cross-platform).
-  luasec/          TLS - .dll + Lua source.
-  luasocket/       TCP/UDP - .dll + Lua source.
-  adclib/          ADC tiger-hash - .dll.
-  lfs/             LuaFileSystem (CLI path) - .dll.
-  lfs_wx/          LuaFileSystem (GUI path) - .dll.
-  unicode/         Unicode utf-8 shim - .dll (Win-only Phase 0).
-  ressources/      GUI icon/resource .dll bundles. lib/ressources/
-                   README.md documents provenance + Phase 2 plan to
-                   replace with sourced-from-PNG resource loading.
+--- C-extension sources (vendored, Phase 2) ---
+lua/src/           Lua 5.4 stdlib (vendored from hub). Builds lua.dll
+                   + lua.exe via CMakeLists.txt (standalone interpreter
+                   is announcer-specific; hub embeds Lua in Luadch.exe).
+adclib/            ADC tiger-hash + base32 + escape (vendored from hub).
+luasec/            TLS C extension (vendored from hub, upstream LuaSec 1.3.2).
+luasocket/         TCP/UDP C extension (vendored from hub, upstream LuaSocket 3.1.0).
+lfs/src/           LuaFileSystem source (vendored from upstream
+                   lunarmodules/luafilesystem v1.9.0; hub doesn't bundle).
 
-certs/             OpenSSL cert-generation scripts (.bat + .sh)
-log/               Runtime logs (gitignored except .gitkeep)
+--- Pure-Lua sources (vendored, Phase 2) ---
+basexx/            Pure-Lua base32/base64 (vendored from hub).
+slnunicode/        Pure-Lua utf-8 shim (vendored from hub; replaced the
+                   unmaintained slnunicode C module).
+
+--- Runtime artefacts (NOT committed; produced by CMake build) ---
+build/install/announcer/ default install root (cmake --install
+                   destination). Contains lua.exe + lua.dll + OpenSSL
+                   DLLs + the runtime tree (core/ cfg/ frontends/ certs/
+                   log/ + lib/<dep>/<artefact>).
+
+--- Bundled binaries still committed (transient) ---
+lib/lfs_wx/lfs.dll        Lua-5.1 build for the wxLua-2.8 GUI. Phase 3 GUI
+                          rework on wxLua 3.x will replace.
+lib/ressources/*.dll      GUI icon-resource bundles (wxLua 2.8 frozen). Phase
+                          2 PR-E will replace with sourced-from-PNG runtime
+                          loading.
+
+certs/             OpenSSL cert-generation scripts (.bat + .sh).
+log/               Runtime logs (gitignored except .gitkeep).
+
+CMakeLists.txt     Top-level build orchestration. Vendored sources +
+                   per-dep CMakeLists in their subdirs follow the hub's
+                   pattern 1:1. See docs/BUILDING.md for the build recipe.
 ```
 
 ---
@@ -237,17 +257,48 @@ CI matrix. Build `.so`/`.dylib` for adclib/luasec/luasocket/lfs/
 unicode-shim. Replace `lib/ressources/*.dll` opaque resource bundles
 with sourced-from-PNG resource loading.
 
-### Phase 2 - Cross-platform CLI [QUEUED, no fixed timeline]
+### Phase 2 - CMake + cross-platform CLI [IN PROGRESS]
 
-Goal: real Linux + Windows CLI via CMake + CI matrix.
+Goal: real Linux + Windows CLI via in-tree CMake + CI matrix.
 
-- Adopt hub's CMake pipeline (currently the .dlls are pulled from
-  the hub's build artifacts; Phase 2 builds them in-tree).
-- Ship `.so` / `.dylib` alongside the existing `.dll` for
-  luasec / luasocket / adclib / lfs / unicode-shim.
-- Replace `lib/ressources/*.dll` opaque resource bundles with
-  sourced-from-PNG resource loading at runtime.
-- GitHub Actions matrix for build + smoke on Linux + Windows.
+PR-A (this PR, "CMake scaffold + vendor C deps + Windows in-tree build"):
+- Vendor C sources from hub: `lua/src`, `adclib`, `luasec`,
+  `luasocket`. Vendor pure-Lua helpers: `basexx`, `slnunicode`.
+  Vendor `lfs/src` from upstream `lunarmodules/luafilesystem` v1.9.0.
+- Top-level `CMakeLists.txt` adopting hub's CMake pattern 1:1; per-dep
+  `CMakeLists.txt` in each vendored source dir (hub's verbatim where
+  possible). Announcer-specific addition: standalone `lua.exe` build
+  target in `lua/src/CMakeLists.txt` (hub embeds Lua in Luadch.exe;
+  the announcer needs a separate interpreter for the CLI / GUI worker).
+- Install layout matches Phase 1's bundled layout exactly: `lua.exe` +
+  `lua.dll` + OpenSSL DLLs at root, `lib/<dep>/<artefact>` for C deps,
+  pure-Lua helpers under `lib/basexx/` + `lib/unicode/`, runtime trees
+  for `core/` `cfg/` `certs/` `frontends/`. `cfg/id.lua` excluded via
+  CMake PATTERN exclude to avoid leaking the bot secret if a dev tree
+  has one from local smoke-testing.
+- All previously-committed binaries (`lua.exe`, `lua.dll`, OpenSSL DLLs,
+  `lib/{adclib,lfs,luasec,luasocket}/*.dll`, `lib/{basexx,unicode}/*.lua`)
+  removed from source tree; they are now build outputs.
+- Workflow change: `git clone` no longer ships a runnable announcer.
+  Operator runs `cmake -B build && cmake --build build && cmake
+  --install build` first. PR-C (CI) will publish release zips with
+  pre-built artefacts for end users.
+- `docs/BUILDING.md` (NEW): full build recipe + prerequisites
+  (MinGW + OpenSSL 3.0+ on Windows; gcc + libssl-dev on Linux).
+- `BUNDLED.md` restructured: now documents in-tree vendor provenance +
+  per-dep sync policy, not committed binary blobs.
+
+PR-B (queued): Linux build verification + `.so` / `.dylib` production.
+The CMakeLists is already portable; what's missing is CI verification.
+
+PR-C (queued): GitHub Actions matrix for build + smoke on Linux + Windows.
+Publish release zips with pre-built artefacts.
+
+PR-D (queued): the 2 TODO(phase-2) source markers in `core/init.lua`
+(`./lib/...` cpath anchoring vs CWD; drop dead `lib/jit/?.lua` path).
+
+PR-E (queued): replace `lib/ressources/{res1,res2}.dll` opaque GUI
+resource bundles with sourced-from-PNG resource loading at runtime.
 
 ### Phase 3 - GUI on Lua 5.4 [QUEUED, highest risk]
 
@@ -291,25 +342,46 @@ last so CLI/core deliver value independently even if the GUI lags.
 ### Tooling gotchas
 
 - **Pin `gh` to the repo**: `gh ... --repo luadch-ng/announcer`.
-- **Default branch is `main`**, not `master`. `gh pr create
-  --base master` errors with "Base ref must be a branch". Use
-  `--base main`. Lesson from Phase 0.
-- **`cfg/id.lua` must never be committed** - it is the bot's
-  tiger-hash PID (CID derived). Already in `.gitignore` from Phase 0;
-  if anyone removes the entry, security review fails.
-- **`lib/` binary provenance**: never add a new binary blob to lib/
-  without updating `lib/ressources/README.md` (or sibling) with
-  upstream source + sha256 + purpose. Unaudited blobs in the repo
-  history are a security smell.
-- **Local Lua-syntax check** before push:
+- **Default branch is `main`**, not `master`. Lesson from Phase 0.
+- **`cfg/id.lua` must never be committed** - it is the bot's tiger-
+  hash PID (CID derived). In `.gitignore` from Phase 0 (parsing fix
+  Phase 1); CMake `install(DIRECTORY cfg/ ...)` also excludes it via
+  PATTERN.
+- **CMake build (Phase 2+)**: needs `OPENSSL_ROOT_DIR` set on Windows
+  (flat-layout path or msys2-style with bin/ underneath both work).
+  MinGW + OpenSSL 3.0+ are required. See `reference-windows-toolchain`
+  in auto-memory for Aybo's machine setup.
+- **Vendored C-source sync from hub**: when the hub updates one of
+  `adclib`/`luasec`/`luasocket`/`lua/src`/`basexx`/`slnunicode`, an
+  announcer follow-up PR mirrors the change + re-runs the build +
+  documents the sync date in `BUNDLED.md`. Avoid drift.
+- **`lib/` runtime artefacts** (`adclib.dll`, `lfs.dll`, etc.) are
+  NOT committed since Phase 2; they're CMake outputs. The only
+  committed binaries left in `lib/` are `lfs_wx/` (Phase 3 scope)
+  and `lib/ressources/` (Phase 2 PR-E scope). New binary blobs need
+  `BUNDLED.md` provenance.
+- **Local Lua-syntax check** before push (using the CMake-built
+  lua.exe in the install dir):
   ```
-  C:\lua-5.4.8_Win64_bin\lua54.exe -e "local f, e = loadfile([[core/net.lua]]); print(f and 'OK' or e)"
+  build/install/announcer/lua.exe -e "local f, e = loadfile([[core/net.lua]]); print(f and 'OK' or e)"
   ```
   Faster than going through review for a syntax bug.
 
 ---
 
-## 7. First-time setup (operator-side, Windows, Phase 0)
+## 7. First-time setup (operator-side, Windows, Phase 2)
+
+After Phase 2 the announcer ships **source-only**. Build via the
+in-tree CMake pipeline (see [`docs/BUILDING.md`](docs/BUILDING.md) for
+prerequisites + full details). Three-step recipe:
+
+```
+cmake -B build -G "MinGW Makefiles" -DCMAKE_BUILD_TYPE=Release -DOPENSSL_ROOT_DIR=C:/OpenSSL
+cmake --build build -j
+cmake --install build
+```
+
+Output lands at `build/install/announcer/`. From there:
 
 1. Generate a TLS cert:
    ```
@@ -321,8 +393,11 @@ last so CLI/core deliver value independently even if the GUI lags.
 3. Edit `cfg/rules.lua` (which directories to scan).
 4. Run:
    ```
-   lua frontends/cli/main.lua
+   lua.exe frontends/cli/main.lua
    ```
-   (Or build the GUI `Announcer.exe` via wxluafreeze.)
+   (GUI workflow: Phase 3 will reintroduce a modern wxLua-3 GUI;
+   until then the wxLua-2.8 `Announcer.exe` still works against the
+   Phase-1-shipped layout but needs its own wxluafreeze step.)
 
-Linux / macOS: Phase 2 work.
+Linux / macOS: Phase 2 PR-B work (the CMakeLists is portable, just
+needs CI verification + .so/.dylib production).

@@ -1,87 +1,68 @@
-# Bundled binary provenance
+# Vendored sources + bundled provenance
 
-Top-level + `lib/` binary blobs shipped with this repo. Per CLAUDE.md
-§6 "never add a new binary blob to lib/ without updating ... README.md"
-- this file extends that contract to the top-level runtime binaries
-introduced in Phase 1.
+After Phase 2 (CMake build pipeline), the announcer no longer commits
+pre-built binary blobs. All runtime binaries are produced by the local
+build from the in-tree vendored C sources. See [`docs/BUILDING.md`](docs/BUILDING.md)
+for the three-step `cmake -B build` workflow.
 
-## Top-level runtime (Phase 1, Win64 only)
+This file documents the per-source upstream provenance + sync policy.
 
-These ship at the repo root so operators can run `lua.exe frontends/cli/main.lua`
-without installing Lua 5.4 separately. Linux `.so` + macOS `.dylib`
-arrive in Phase 2.
+## In-tree vendored C sources
 
-| File                       | Size      | Source                                                                          | Built                                                                                                  |
-|----------------------------|-----------|---------------------------------------------------------------------------------|--------------------------------------------------------------------------------------------------------|
-| `lua.exe`                  | 109 934 B | upstream Lua 5.4.7 / 5.4.8 stdlib (`lua.c`), built fresh                        | MinGW gcc 16.1.0 UCRT64. `gcc -O2 -o lua.exe lua.c -I<hub>/lua/src -L. -l:lua.dll -static-libgcc`      |
-| `lua.dll`                  | 363 008 B | hub `luadch-ng/luadch` build/install artefact - the Lua 5.4 runtime             | hub's CMake build at `d:\Projekte\luadch\build\install\luadch\lua.dll` (commit on `master`)             |
-| `libcrypto-3-x64.dll`      | 7 065 964 B | OpenSSL 3                                                                       | mirrored from hub's build/install artefact (same OpenSSL version the hub links against)                |
-| `libssl-3-x64.dll`         | 1 325 432 B | OpenSSL 3                                                                       | mirrored from hub's build/install artefact                                                             |
+| Directory             | Upstream                                                    | Version / sync          | Built artefact (CMake)         |
+|-----------------------|-------------------------------------------------------------|-------------------------|--------------------------------|
+| `lua/src/`            | upstream Lua 5.4 (lua.org)                                  | mirrored from hub `luadch-ng/luadch:lua/src` | `lua.dll` + `lua.exe` (standalone interpreter, announcer-specific) |
+| `adclib/`             | hub's `luadch-ng/luadch:adclib`                             | mirrored                | `lib/adclib/adclib.dll`        |
+| `luasec/`             | hub's `luadch-ng/luadch:luasec` (upstream LuaSec 1.3.2)     | mirrored                | `lib/luasec/ssl/ssl.dll`       |
+| `luasocket/`          | hub's `luadch-ng/luadch:luasocket` (upstream LuaSocket 3.1.0) | mirrored              | `lib/luasocket/socket/socket.dll` + `lib/luasocket/mime/mime.dll` |
+| `lfs/src/`            | upstream [`lunarmodules/luafilesystem`](https://github.com/lunarmodules/luafilesystem) | **v1.9.0** (cloned 2026-06-01) | `lib/lfs/lfs.dll` |
 
-Why `lua.dll` and not `lua54.dll`? The hub builds its Lua runtime with
-the basename `lua.dll`, and all the hub-compiled C extensions
-(`adclib`, `luasec/ssl`, `luasocket/socket`, etc.) link against
-`lua.dll` by that name. The standalone Lua 5.4 distro at
-`C:\lua-5.4.8_Win64_bin\lua54.dll` is **not** ABI-interchangeable
-here even though both are Lua 5.4 - the DLL filename must match.
+## In-tree vendored pure-Lua sources
 
-## `lib/` C-extension binaries + pure-Lua shims
+| File / dir                  | Upstream                                                    | Sync           | Installed to (CMake) |
+|-----------------------------|-------------------------------------------------------------|----------------|----------------------|
+| `basexx/basexx.lua`         | hub's `luadch-ng/luadch:basexx/basexx.lua`                  | mirrored       | `lib/basexx/basexx.lua` |
+| `slnunicode/unicode.lua`    | hub's `luadch-ng/luadch:slnunicode/unicode.lua` (~100 LoC utf-8 shim that replaces the unmaintained `slnunicode` C module) | mirrored | `lib/unicode/unicode.lua` |
 
-| File                              | Size       | Source                                                                                         |
-|-----------------------------------|------------|------------------------------------------------------------------------------------------------|
-| `lib/adclib/adclib.dll`           | varies     | hub's CMake build (`adclib/CMakeLists.txt`). ADC tiger-hash + base32 + escape helpers.         |
-| `lib/luasec/ssl/ssl.dll`          | varies     | hub's CMake build of upstream `luasec 1.3.2`.                                                  |
-| `lib/luasocket/socket/socket.dll` | varies     | hub's CMake build of upstream `luasocket 3.1.0`.                                               |
-| `lib/luasocket/mime/mime.dll`     | varies     | hub's CMake build of upstream `luasocket 3.1.0`.                                               |
-| `lib/lfs/lfs.dll`                 | 69 371 B   | built fresh from `lunarmodules/luafilesystem` upstream **v1.9.0**, MinGW gcc 16.1.0 UCRT64.    |
-| `lib/unicode/unicode.lua`         | ~100 LoC   | hub's pure-Lua `slnunicode` shim (utf8 string ops). Replaced the upstream Lua-5.1 `unicode.dll` C module in Phase 1 PR-A. |
+## Runtime DLLs bundled at install root
 
-`lfs.dll` build invocation (from upstream luafilesystem `src/`):
+Produced by the CMake build (NOT committed in the source tree):
 
-```
-gcc -O2 -Wall -shared -o lfs.dll lfs.c \
-    -I<hub>/lua/src \
-    -L. -l:lua.dll \
-    -static-libgcc
-```
+- `lua.dll` (Lua 5.4 runtime)
+- `lua.exe` (Lua 5.4 standalone interpreter)
+- `libssl-3-x64.dll` + `libcrypto-3-x64.dll` (copied from `OPENSSL_ROOT_DIR` at install time)
 
-The hub does not bundle LuaFileSystem (the hub doesn't need it). It
-is built in-tree for the announcer because `core/announce.lua` and
-`core/log.lua` use `lfs.dir` / `lfs.attributes` for the release-dir
-scan and the log-size cap.
+## Committed binaries that remain (not yet CMake-built)
 
-## `lib/lfs_wx/lfs.dll`
+| File                          | Reason still committed                                                                           |
+|-------------------------------|--------------------------------------------------------------------------------------------------|
+| `lib/lfs_wx/lfs.dll`          | Lua-5.1 build used by the wxLua-2.8 GUI. Phase 3 GUI rework on wxLua 3.x will replace this.       |
+| `lib/ressources/res1.dll`     | wxLua 2.8 icon-resource bundle. Phase 2 PR-E will replace with sourced-from-PNG resource loading. |
+| `lib/ressources/res2.dll`     | Same.                                                                                            |
+| `lib/ressources/png/*.png`    | App icon + license-badge PNGs. Stay; PR-E will use them directly.                                |
 
-Still the upstream 2014 Lua-5.1 build. **The wxLua GUI uses this
-directory** via a separate `package.cpath` line in
-`Announcer.wx.lua`. GUI migration to Lua 5.4 / wxLua 3.x is **Phase
-3** scope; until then this remains a Lua-5.1 module. The CLI does
-not load it.
+## Sync policy
 
-## `lib/ressources/{res1,res2}.dll`
+When the hub `luadch-ng/luadch` updates one of the C deps (typically as
+part of a phase-N modernisation), sync this announcer's vendored copy
+in a follow-up PR:
 
-GUI icon resource bundles inherited verbatim from upstream
-`luadch/announcer_client` master branch (2022). See
-[`lib/ressources/README.md`](lib/ressources/README.md). Will be
-replaced with sourced-from-PNG resource loading in **Phase 2**.
+1. Copy the updated `<dep>/` directory from the hub.
+2. Re-run `cmake --build build && cmake --install build` and verify
+   the smoke (`dofile core/init.lua` runs to the expected
+   `ssl.newcontext` failure when no cert is installed).
+3. Document the sync date + hub commit hash in this file.
 
-`client.dll` (the upstream wxluafrozen Lua-5.1 announcer-bot
-bundle) was removed in Phase 1 PR-C; the GUI now spawns
-`frontends/gui/spawned_worker.lua` via the bundled `lua.exe`.
+This avoids accidental drift; the announcer is always one explicit
+sync behind the hub at most.
 
 ## Verification
 
 ```sh
-# Confirm each .dll links the expected lua runtime
+# After cmake --install build, confirm each artefact links lua.dll
+# (NOT lua54.dll - we ship our own runtime under that exact name):
+cd build/install/announcer
 objdump -p lua.exe lua.dll libssl-3-x64.dll lib/adclib/adclib.dll lib/lfs/lfs.dll | grep "DLL Name"
 ```
 
-All hub-derived blobs and the locally-built lfs should reference
-`lua.dll` (NOT `lua54.dll`).
-
-## Phase 2 plan
-
-Replace this section with a CMake build pipeline that produces all
-of the above from in-tree sources. The Phase 2 PR will delete
-`BUNDLED.md` (or re-scope it to "build-output description") because
-the artefacts will no longer be vendored blobs.
+All artefacts should reference `lua.dll`.
