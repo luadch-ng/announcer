@@ -14,16 +14,10 @@
             hubsid / hubinf / owninf / passwd / hubsalt / hublogin /
             cipher). Mirrors the keys of the upstream core/status.lua.
 
-        events.emit( "announce", release )
-            Fired for each release successfully sent to the hub.
-
-        events.emit( "round", count )
-            Fired after each announce round with the count of new
-            releases in that round.
-
-        events.emit( "fatal", err )
-            Connection or login failed; the loop will return false
-            and the frontend decides whether to retry.
+    Note: the upstream Phase 0 design discussion sketched additional
+    event names (announce / round / fatal) - those are NOT emitted
+    today (core/net.lua only fires "status"). Add new event names
+    here when their first emit lands.
 
     Frontends register handlers via events.on("name", handler). Multiple
     handlers per event are allowed and called in registration order.

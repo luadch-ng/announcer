@@ -25,7 +25,7 @@ the basename `lua.dll`, and all the hub-compiled C extensions
 `C:\lua-5.4.8_Win64_bin\lua54.dll` is **not** ABI-interchangeable
 here even though both are Lua 5.4 - the DLL filename must match.
 
-## `lib/` C-extension binaries
+## `lib/` C-extension binaries + pure-Lua shims
 
 | File                              | Size       | Source                                                                                         |
 |-----------------------------------|------------|------------------------------------------------------------------------------------------------|
@@ -34,6 +34,7 @@ here even though both are Lua 5.4 - the DLL filename must match.
 | `lib/luasocket/socket/socket.dll` | varies     | hub's CMake build of upstream `luasocket 3.1.0`.                                               |
 | `lib/luasocket/mime/mime.dll`     | varies     | hub's CMake build of upstream `luasocket 3.1.0`.                                               |
 | `lib/lfs/lfs.dll`                 | 69 371 B   | built fresh from `lunarmodules/luafilesystem` upstream **v1.9.0**, MinGW gcc 16.1.0 UCRT64.    |
+| `lib/unicode/unicode.lua`         | ~100 LoC   | hub's pure-Lua `slnunicode` shim (utf8 string ops). Replaced the upstream Lua-5.1 `unicode.dll` C module in Phase 1 PR-A. |
 
 `lfs.dll` build invocation (from upstream luafilesystem `src/`):
 

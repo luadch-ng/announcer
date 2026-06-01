@@ -18,4 +18,4 @@ RES_PATH  = "lib/ressources/"
 FRONTEND_PATH = "frontends/"
 
 PROGRAM_NAME = "Luadch-NG Announcer"
-_VERSION     = "1.0.0-dev" -- Phase 0: consolidated repo, still Lua 5.1
+_VERSION     = "1.0.0-dev" -- Phase 1: Lua 5.4 runtime + hub-vendored 5.4 deps

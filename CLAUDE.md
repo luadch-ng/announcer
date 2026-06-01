@@ -182,11 +182,12 @@ for status; `net.lua` no longer auto-runs (frontends invoke); new
 `cfg/id.lua` secret leak fixed in .gitignore; provenance docs for
 bundled binaries.
 
-### Phase 1 - Lua 5.4 migration [IN PROGRESS]
+### Phase 1 - Lua 5.4 migration [SHIPPED 2026-06-01]
 
 Goal: core + CLI on Lua 5.4 (matches hub).
 
-PR-A (this PR, "lib bump + source migration + parser bug fixes"):
+PR-A (PR #3, merged 2026-06-01 as commit `838501a`, "lib bump +
+source migration + parser bug fixes"):
 - Lib bump: all hub-available deps swapped to hub's 5.4-built
   versions (adclib, basexx, luasec ssl, luasocket socket/mime/
   ltn12/mbox, unicode shim). Dead Lua source dropped (luasec
@@ -209,14 +210,27 @@ PR-A (this PR, "lib bump + source migration + parser bug fixes"):
     parenthesised via a hoisted local `_sleep`; sleeptime-nil
     fallback no longer corrupts the sleep arg.
 
-PR-B (queued): events.lua pcall safety wrap around handler dispatch.
+PR-B (PR #4, merged 2026-06-01 as commit `610e12c`, "events.lua
+pcall safety wrap"): handler dispatch in `events.emit` is now
+pcall-guarded; a handler that throws is logged and the chain
+continues. Tested side-by-side pre/post-fix: a middle handler
+erroring would previously kill subsequent handlers, now they run.
 
-PR-C (shipped): GUI integration. New `frontends/gui/spawned_worker.lua`
-registers `events.on("status", ...)` -> writes `core/status.lua` for
-the wxLua GUI's poller. The GUI's `start_process()` now spawns the
-bundled `lua.exe` + the worker script via `wx.wxExecute`, replacing
-the upstream's `lib/ressources/client.dll` wxluafrozen Lua-5.1
-bundle (deleted in PR-C as orphaned).
+PR-C (PR #5, merged 2026-06-01 as commit `4afdae1`, "GUI integration
+via events.on"): new `frontends/gui/spawned_worker.lua` registers
+`events.on("status", ...)` -> writes `core/status.lua` for the
+wxLua GUI's poller. The GUI's `start_process()` now spawns the
+bundled `lua.exe` + the worker script via `wx.wxExecute`,
+replacing the upstream's `lib/ressources/client.dll` wxluafrozen
+Lua-5.1 bundle (deleted in PR-C as orphaned). PR-C also fixed the
+stale `integrity_check` table in `Announcer.wx.lua` (latent
+broken since PR-A; 11 stale entries removed, 5 new entries added)
+and added quote-hazard / empty-cwd guards on the `wxExecute` cmd.
+
+Phase 1 review gate (CLAUDE.md §1b) passed 2026-06-01: cumulative
+security / consistency / smoke audit across all 3 PRs returned 0
+blockers + 6 nits, all addressed inline or tracked for later
+phases.
 
 Phase 2 (separate, queued): adopt hub's CMake 1:1 + cross-platform
 CI matrix. Build `.so`/`.dylib` for adclib/luasec/luasocket/lfs/
