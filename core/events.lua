@@ -29,7 +29,13 @@
     handlers per event are allowed and called in registration order.
     Without a handler, an event is a no-op.
 
+    Handler dispatch is pcall-guarded (Phase 1 PR-B): a handler that
+    errors is logged (via log.event if available, else stderr) and
+    the remaining handlers in the chain still run. One buggy frontend
+    handler cannot kill the chain.
+
         - written 2026-05-30 for luadch-ng/announcer Phase 0
+        - pcall safety wrap added 2026-06-01 (Phase 1 PR-B)
 
 ]]--
 
@@ -46,7 +52,20 @@ events.emit = function( name, ... )
     local list = handlers[ name ]
     if not list then return end
     for i = 1, #list do
-        list[ i ]( ... )
+        local ok, err = pcall( list[ i ], ... )
+        if not ok then
+            local msg = "events.emit('" .. tostring( name ) .. "'): handler #" .. i .. " error: " .. tostring( err )
+            -- log.event is loaded after events.lua in init.lua but
+            -- events.emit is only called at runtime (from net.lua's
+            -- state machine), by which point log is up. Stderr is
+            -- the fallback for edge cases (e.g. events.emit fired
+            -- during early bootstrap before log.lua finished).
+            if log and log.event then
+                log.event( msg )
+            else
+                io.stderr:write( msg .. "\n" )
+            end
+        end
     end
 end
 
