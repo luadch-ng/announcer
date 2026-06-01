@@ -21,19 +21,17 @@
 
 local filetype = ( os.getenv "COMSPEC" and os.getenv "WINDIR" and ".dll" ) or ".so"
 
--- TODO(phase-2): the "././lib/..." prefix assumes CWD is the install
--- root. Hub fixed an analogous path-anchoring class in luadch#12.
--- The CMake adoption in Phase 2 should resolve paths relative to
--- the executable rather than CWD so `lua.exe frontends\cli\main.lua`
--- works from any directory.
--- TODO(phase-2): `lib/jit/?.lua` path is a dead LuaJIT remnant from
--- upstream. Pure-Lua 5.4 + 5.1 never used it. Drop in Phase 2.
+-- The "././lib/..." entries below are CWD-relative; the active frontend
+-- (frontends/cli/main.lua, frontends/gui/spawned_worker.lua) chdirs to
+-- the install root before reaching this file so they always resolve to
+-- the bundled binaries. Keeping the relative form means a stripped-down
+-- `lua core/init.lua` from the install root still bootstraps even when
+-- the frontend layer is bypassed.
 package.path = package.path .. ";"
     .. "././core/?.lua;"
     .. "././lib/?/?.lua;"
     .. "././lib/luasocket/lua/?.lua;"
     .. "././lib/luasec/lua/?.lua;"
-    .. "././lib/jit/?.lua;"
 
 package.cpath = package.cpath .. ";"
     .. "././lib/?/?" .. filetype .. ";"
