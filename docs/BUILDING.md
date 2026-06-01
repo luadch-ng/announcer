@@ -88,6 +88,17 @@ possible.
 - `lib/lfs_wx/lfs.dll` is still a Lua-5.1 build (the GUI's separate
   wxLua-2.8 binary depends on it). Phase 3 will replace this with a
   modern wxLua-3 GUI on Lua 5.4 + drop the lfs_wx subdir.
+- **Always run from the install dir, not the source tree.** The
+  `frontends/gui/Announcer.wx.lua` integrity check (lines ~1108-1139)
+  expects the post-install layout - `lib/adclib/adclib.dll`,
+  `lib/lfs/lfs.dll` etc. live under `lib/<dep>/` after
+  `cmake --install` but DO NOT exist in the source tree (they're
+  CMake outputs). Trying to launch the GUI from the source root
+  fails the integrity check. The CLI's `frontends/cli/main.lua`
+  has the same `package.cpath`/`package.path` assumption via
+  `core/init.lua` (the `././lib/...` prefixes resolve relative to
+  CWD). PR-D (Phase 2) will refactor these to be exec-dir-relative;
+  until then, the rule is: `cd build/install/announcer` first.
 
 ## Cross-platform (Phase 2 PR-B, queued)
 
