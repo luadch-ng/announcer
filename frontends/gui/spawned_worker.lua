@@ -25,8 +25,25 @@
     this PR.
 
         - written 2026-06-01 for luadch-ng/announcer Phase 1 PR-C
+        - PR-D path-anchoring 2026-06-01
 
 ]]--
+
+-- Anchor the runtime on the install root before any CWD-relative
+-- dofile/require runs. The wxLua GUI spawns this worker via
+-- wx.wxExecute, which inherits the GUI's CWD - in current GUI builds
+-- that is the install root by construction. See frontends/bootstrap.lua
+-- for the rationale.
+do
+    local script = arg and arg[ 0 ] or ""
+    local install_dir = script:match( "^(.+)[/\\]frontends[/\\][^/\\]+[/\\][^/\\]+$" ) or "."
+    if install_dir:find( "[;?]" ) then
+        io.stderr:write( "spawned_worker: refusing to anchor on install_dir with `;` or `?`: " .. install_dir .. "\n" )
+        os.exit( 1 )
+    end
+    local sep = package.config:sub( 1, 1 )
+    dofile( install_dir .. sep .. "frontends" .. sep .. "bootstrap.lua" )
+end
 
 dofile "core/init.lua"
 
