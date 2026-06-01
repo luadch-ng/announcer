@@ -69,7 +69,7 @@ jobs:
       # confirms socket/ssl/basexx/lfs/adclib all required cleanly
       # AND the announcer's ADC state machine got far enough to ask
       # for the cert. Any other failure mode is a real regression.
-      - name: Bootstrap-chain smoke
+      - name: Bootstrap-chain smoke (core/init.lua direct, fallback path)
         run: |
           cd build/install/announcer
           ./lua -e '
@@ -85,6 +85,45 @@ jobs:
               os.exit(1)
             end
           '
+
+      # Frontend bootstrap smoke (PR-D #10): exercises frontends/bootstrap.lua
+      # which the direct `dofile "core/init.lua"` test above bypasses
+      # entirely. Two cases:
+      #   1. From install root with a relative arg[0] - hits the regex
+      #      fallback path; bootstrap.lua must emit a stderr note AND
+      #      the chain must still reach ssl.newcontext.
+      #   2. From a foreign CWD with an absolute arg[0] - hits the
+      #      anchored path; bootstrap.lua must NOT emit the fallback
+      #      note (regex matched) AND the chain must reach
+      #      ssl.newcontext. Without the bootstrap this case fails at
+      #      the very first `dofile "core/init.lua"` with "No such
+      #      file or directory".
+      # Filed in #11; the direct-core test alone would have shipped a
+      # bootstrap.lua regression silently.
+      - name: Frontend bootstrap smoke (relative arg[0], fallback path)
+        run: |
+          cd build/install/announcer
+          output=$(./lua frontends/cli/main.lua 2>&1 || true)
+          echo "$output"
+          echo "$output" | grep -q "did not anchor; assuming CWD is install root" \
+            || { echo "SMOKE FAIL: expected stderr fallback note absent"; exit 1; }
+          echo "$output" | grep -q "error loading private key" \
+            || { echo "SMOKE FAIL: chain did not reach ssl.newcontext"; exit 1; }
+          echo "SMOKE OK: fallback path emits warn + reaches ssl.newcontext"
+
+      - name: Frontend bootstrap smoke (absolute arg[0], anchored path)
+        run: |
+          install_dir="$GITHUB_WORKSPACE/build/install/announcer"
+          cd "$RUNNER_TEMP"
+          output=$("$install_dir/lua" "$install_dir/frontends/cli/main.lua" 2>&1 || true)
+          echo "$output"
+          if echo "$output" | grep -q "did not anchor"; then
+            echo "SMOKE FAIL: anchored path unexpectedly hit the fallback warn"
+            exit 1
+          fi
+          echo "$output" | grep -q "error loading private key" \
+            || { echo "SMOKE FAIL: chain did not reach ssl.newcontext"; exit 1; }
+          echo "SMOKE OK: anchored path silent + reaches ssl.newcontext"
 
   smoke-windows:
     name: Smoke Windows x86_64 (MinGW UCRT64)
@@ -132,7 +171,7 @@ jobs:
           test -f build/install/announcer/lib/basexx/basexx.lua
           test ! -f build/install/announcer/cfg/id.lua  # secret must not be installed
 
-      - name: Bootstrap-chain smoke
+      - name: Bootstrap-chain smoke (core/init.lua direct, fallback path)
         shell: msys2 {0}
         run: |
           cd build/install/announcer
@@ -149,3 +188,31 @@ jobs:
               os.exit(1)
             end
           '
+
+      # See the Linux job above for rationale (PR-D #10 / follow-up #11).
+      - name: Frontend bootstrap smoke (relative arg[0], fallback path)
+        shell: msys2 {0}
+        run: |
+          cd build/install/announcer
+          output=$(./lua.exe frontends/cli/main.lua 2>&1 || true)
+          echo "$output"
+          echo "$output" | grep -q "did not anchor; assuming CWD is install root" \
+            || { echo "SMOKE FAIL: expected stderr fallback note absent"; exit 1; }
+          echo "$output" | grep -q "error loading private key" \
+            || { echo "SMOKE FAIL: chain did not reach ssl.newcontext"; exit 1; }
+          echo "SMOKE OK: fallback path emits warn + reaches ssl.newcontext"
+
+      - name: Frontend bootstrap smoke (absolute arg[0], anchored path)
+        shell: msys2 {0}
+        run: |
+          install_dir="$GITHUB_WORKSPACE/build/install/announcer"
+          cd "$RUNNER_TEMP"
+          output=$("$install_dir/lua.exe" "$install_dir/frontends/cli/main.lua" 2>&1 || true)
+          echo "$output"
+          if echo "$output" | grep -q "did not anchor"; then
+            echo "SMOKE FAIL: anchored path unexpectedly hit the fallback warn"
+            exit 1
+          fi
+          echo "$output" | grep -q "error loading private key" \
+            || { echo "SMOKE FAIL: chain did not reach ssl.newcontext"; exit 1; }
+          echo "SMOKE OK: anchored path silent + reaches ssl.newcontext"
