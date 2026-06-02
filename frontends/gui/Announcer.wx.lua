@@ -3731,6 +3731,28 @@ local log_handler = function( file, parent, mode, button, count, broadcast, sile
     if mode == "read" then
         if check_file( file ) then
             button:Disable()
+            --// #30: wxTextCtrl:LoadFile slurps the entire file into the
+            --// GUI control + renders it. wxLua 3.x crashes on hundreds
+            --// of MB (upstream report: 526 MB logfile -> GUI crash).
+            --// Guard with a 10 MB cap; core log rotation is at 2 MB by
+            --// default so this gives 5x headroom before the GUI rejects.
+            --// Externally-grown files (rotation disabled, mid-write
+            --// crash) hit this and get a friendly error instead of
+            --// taking down the GUI.
+            local MAX_GUI_LOAD = 10 * 1024 * 1024
+            local size_now = wx.wxFileSize( path .. file ) or 0
+            if size_now > MAX_GUI_LOAD then
+                parent:Clear()
+                local hint = "File too large to load (" .. util.formatbytes( size_now )
+                    .. " > " .. util.formatbytes( MAX_GUI_LOAD ) .. ").\n"
+                    .. "Clear the file via the Clear button or rotate it externally to view newer entries."
+                parent:WriteText( "\n\n\n\n\n\n\n\n" .. hint )
+                if not silent then
+                    log_broadcast( log_window, "Error: File too large to load: '" .. file .. "' (" .. util.formatbytes( size_now ) .. ")" )
+                end
+                button:Enable( true )
+                return
+            end
             --// #24: timer auto-refresh passes silent=true so the
             --// "Reading text from" status line doesn't accumulate every
             --// 60s in the log window. User-button-driven calls leave

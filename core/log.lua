@@ -38,6 +38,26 @@ local check_filesize = function( file )
     return false
 end
 
+--// #30: pre-startup rotation. The existing check_filesize fires only
+--// INSIDE log.event / log.release - i.e. on next write. If the file
+--// grew unbounded while the announcer was offline (crash mid-write,
+--// disk-fill incident, third-party tooling, ...), the read("*a") below
+--// would slurp the entire file into Lua memory before any rotation
+--// logic could run. That blocked auto-login on a 526 MB logfile in
+--// the upstream report. Truncate up-front so the read is bounded.
+local pre_rotate = function( file )
+    if lfs.attributes( file, "mode" ) ~= "file" then return end
+    local size = lfs.attributes( file ).size or 0
+    if size > maxlogsize then
+        local f = io.open( file, "w+" )
+        if f then f:close() end
+        io.stderr:write( "log.lua: startup truncated oversized " .. file
+            .. " (" .. size .. " bytes > " .. maxlogsize .. ", historical data discarded)\n" )
+    end
+end
+pre_rotate( LOG_PATH .. "logfile.txt" )
+pre_rotate( LOG_PATH .. "announced.txt" )
+
 local logfile, err = io.open( LOG_PATH .. "logfile.txt", "a+" )
 assert( logfile, "Fail: " .. tostring( err ) )
 local content = logfile:read( "*a" )
