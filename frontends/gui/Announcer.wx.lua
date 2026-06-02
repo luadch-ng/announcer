@@ -939,12 +939,22 @@ local save_categories_values = function( log_window )
 end
 
 --// get status from status.lua
+--// Read a single status entry written by the spawned worker.
+--// Phase 3 Tier 3 (#7): on load failure return "" (the "unknown
+--// state" sentinel that callsites already handle as "show
+--// connecting..." in main.lua section), NOT the err string -
+--// returning err meant downstream `:find("Fail")` checks went to
+--// the wrong branch and the GUI showed GREEN for a state it
+--// actually couldn't read. With the worker now using
+--// util.savetable_atomic the race window is microseconds, but
+--// this defensive default keeps a single missed read from
+--// corrupting the displayed state.
 local get_status = function( file, key )
-    local tbl, err = util.loadtable( file )
+    local tbl = util.loadtable( file )
     if tbl then
         return tbl[ key ] or ""
     else
-        return err
+        return ""
     end
 end
 
