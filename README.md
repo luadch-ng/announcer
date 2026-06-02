@@ -72,7 +72,9 @@ C-extension binaries on top of the source layout above.
 
 After Phase 2 the announcer ships **source-only**; build with the in-tree
 CMake pipeline (mirrors the parent luadch repo's recipe). See
-[`docs/BUILDING.md`](docs/BUILDING.md) for prerequisites + full details.
+[`docs/BUILDING.md`](docs/BUILDING.md) for prerequisites + full details
+and [`docs/USERGUIDE.md`](docs/USERGUIDE.md) for the operator guide
+(configuring rules, filters, troubleshooting).
 
 ```sh
 # From the repo root:
@@ -121,7 +123,9 @@ Linux needs `libgtk-3-dev` (build) + optionally `xvfb` for headless smoke. The i
 ## Configuration
 
 Edit these files under `cfg/` after a successful build. Each is a Lua
-file that returns a table; comments inline explain each field.
+file that returns a table; comments inline explain each field. For a
+full walkthrough (rules + filters + troubleshooting) see
+[`docs/USERGUIDE.md`](docs/USERGUIDE.md).
 
 | File | Purpose |
 |---|---|
