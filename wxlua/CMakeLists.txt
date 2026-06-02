@@ -23,7 +23,12 @@ set(WXLUA_MOD ${CMAKE_CURRENT_SOURCE_DIR}/modules)
 set(WXLUA_CORE_SRC
     ${WXLUA_MOD}/wxlua/wxlbind.cpp
     ${WXLUA_MOD}/wxlua/wxlcallb.cpp
-    ${WXLUA_MOD}/wxlua/wxlconsole.cpp
+    # wxlconsole.cpp not compiled - it's the wxLua debug-console window
+    # (a wxFrame that shows the Lua print output and stack on errors).
+    # The announcer doesn't use it (we have our own log_window inside
+    # Announcer.wx.lua). Dropping the source also avoids needing to
+    # vendor wxLua's art/ subtree just to satisfy the XPM #include
+    # at line 29.
     ${WXLUA_MOD}/wxlua/wxllua.cpp
     ${WXLUA_MOD}/wxlua/wxlobject.cpp
     ${WXLUA_MOD}/wxlua/wxlstate.cpp
@@ -85,6 +90,24 @@ set_target_properties(wx PROPERTIES
     PREFIX ""
     OUTPUT_NAME "wx"
 )
+
+# Linux RPATH: wx.so lives at lib/wx/, but the wxGTK shared libs
+# (libwx_baseu-3.2.so, libwx_gtk3u_core-3.2.so, libwx_gtk3u_html-3.2.so,
+# libwx_baseu_net-3.2.so) ship at install root. The global
+# CMAKE_INSTALL_RPATH="$ORIGIN" (set at top-level CMakeLists for
+# install-root .so consumers like adclib via parent RPATH) is not
+# enough here - we need to look two levels up. Adding $ORIGIN/../..
+# resolves to install root for wx.so.
+#
+# Windows DLLs use a different search mechanism (no RPATH); wx.dll
+# finds wxbase32u_*.dll via the normal Windows DLL search since
+# lua.exe (the process binary) sits at install root and Windows
+# searches the loading executable's directory before %PATH%.
+if(UNIX AND NOT APPLE)
+    set_target_properties(wx PROPERTIES
+        INSTALL_RPATH "$ORIGIN;$ORIGIN/../.."
+    )
+endif()
 
 target_include_directories(wx PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}

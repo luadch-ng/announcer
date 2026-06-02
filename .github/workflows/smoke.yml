@@ -296,3 +296,75 @@ jobs:
           echo "$output"
           echo "$output" | grep -q "SMOKE OK" \
             || { echo "GUI BUILD SMOKE FAIL"; exit 1; }
+
+  # ---------------------------------------------------------------------------
+  # Phase 3 Tier 2c (#17): Linux port. Same BUILD_GUI=ON exercise as
+  # gui-build-windows but on Ubuntu, against wxGTK (the GTK3 backend of
+  # wxWidgets on Linux). The shared-object naming differs from Windows
+  # (libwx_gtk3u_*.so vs wxmsw32u_*.dll); the install-tree check accounts
+  # for that. No MinGW runtime DLLs to bundle - Linux's libgcc/libstdc++
+  # are baseline system libraries.
+  #
+  # Expected wxWidgets dep: libgtk-3-dev. Without it, wxWidgets's CMake
+  # configure fails with "Cannot find GTK+ libraries" at the gui-toolkit
+  # detect step.
+  # ---------------------------------------------------------------------------
+  gui-build-linux:
+    name: GUI Build Linux x86_64 (BUILD_GUI=ON)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          # xvfb: virtual X11 server. wxLua's luaopen_wx() calls
+          # wxEntryStart() which calls gtk_init() at module-load time;
+          # gtk_init requires a real or virtual DISPLAY. Without xvfb
+          # the require-wx smoke below fails with "Unable to initialize
+          # GTK+, is DISPLAY set properly?". Windows wxLua loads without
+          # a display because wxMSW doesn't need one for app init.
+          sudo apt-get install -y build-essential cmake libssl-dev libgtk-3-dev xvfb
+
+      - name: Configure (BUILD_GUI=ON)
+        run: cmake -B build -DCMAKE_BUILD_TYPE=Release -DBUILD_GUI=ON
+
+      - name: Build (full)
+        # -j 2 to keep RAM under control; the ubuntu-latest runner has
+        # 16 GB RAM same as windows-latest. wxWidgets-on-Linux compile is
+        # less peaky than wxMSW (no Windows-resource-compiler step) but
+        # we keep the same cap for consistency.
+        run: cmake --build build -j 2
+
+      - name: Install
+        run: cmake --install build
+
+      - name: Verify GUI install-tree shape
+        run: |
+          test -f build/install/announcer/lib/wx/wx.so
+          # Bundled wxGTK shared libs (Tier 2b install rules - target names
+          # are platform-agnostic in CMake, so the same install(TARGETS ...)
+          # rule produces .so on Linux).
+          ls build/install/announcer/libwx_baseu-*.so* || \
+            { echo "FAIL: wxbase .so not found"; ls build/install/announcer/ ; exit 1; }
+          ls build/install/announcer/libwx_gtk3u_core-*.so* || \
+            { echo "FAIL: wxcore .so not found"; ls build/install/announcer/ ; exit 1; }
+          ls build/install/announcer/libwx_gtk3u_adv-*.so* || \
+            { echo "FAIL: wxadv .so not found"; ls build/install/announcer/ ; exit 1; }
+          echo "GUI install-tree shape OK"
+
+      - name: Require-wx smoke (load chain only, no window)
+        run: |
+          cd build/install/announcer
+          # `xvfb-run` wraps a virtual X11 display so wxLua's
+          # gtk_init at luaopen_wx time has a DISPLAY to bind. Without
+          # it: "Error: Unable to initialize GTK+, is DISPLAY set
+          # properly?" -> luaopen_wx pushes false -> caller crashes.
+          # `|| true` so set -e doesn't kill the script when the
+          # subshell exits non-zero.
+          output=$(xvfb-run -a ./lua -e 'package.cpath = package.cpath .. [[;././lib/?/?.so]]; local ok, m = pcall(require, "wx"); if not ok then io.stderr:write("FAIL: "..tostring(m).."\n"); os.exit(1) end; print("SMOKE OK: require wx OK, wx.wxVERSION_STRING = " .. tostring(m.wxVERSION_STRING))' 2>&1) || true
+          echo "$output"
+          echo "$output" | grep -q "SMOKE OK" \
+            || { echo "GUI BUILD SMOKE FAIL"; exit 1; }
