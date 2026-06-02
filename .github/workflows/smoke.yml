@@ -256,7 +256,11 @@ jobs:
 
       - name: Build (full)
         shell: msys2 {0}
-        run: cmake --build build -j
+        # -j 2 (not -j): the wxWidgets C++ compile is RAM-heavy (each g++
+        # instance can use 1-2 GB on the larger wxcore translation units);
+        # unrestricted parallelism OOMs the 16 GB Windows runner. Two
+        # parallel jobs leaves headroom for the linker too.
+        run: cmake --build build -j 2
 
       - name: Install
         shell: msys2 {0}
