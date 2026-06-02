@@ -352,7 +352,11 @@ jobs:
       - name: Require-wx smoke (load chain only, no window)
         run: |
           cd build/install/announcer
-          output=$(./lua -e 'package.cpath = package.cpath .. [[;././lib/?/?.so]]; local ok, m = pcall(require, "wx"); if not ok then io.stderr:write("FAIL: "..tostring(m).."\n"); os.exit(1) end; print("SMOKE OK: require wx OK, wx.wxVERSION_STRING = " .. tostring(m.wxVERSION_STRING))' 2>&1)
+          # `|| true` so set -e doesn't kill the script when the subshell
+          # exits non-zero (e.g. Lua's os.exit(1) on require failure).
+          # We need echo "$output" to actually print so the failure
+          # reason is visible in the CI log.
+          output=$(./lua -e 'package.cpath = package.cpath .. [[;././lib/?/?.so]]; local ok, m = pcall(require, "wx"); if not ok then io.stderr:write("FAIL: "..tostring(m).."\n"); os.exit(1) end; print("SMOKE OK: require wx OK, wx.wxVERSION_STRING = " .. tostring(m.wxVERSION_STRING))' 2>&1) || true
           echo "$output"
           echo "$output" | grep -q "SMOKE OK" \
             || { echo "GUI BUILD SMOKE FAIL"; exit 1; }
