@@ -142,6 +142,12 @@ net.loop = function()
         return true
     end
     --// client BINF login string
+    --// #25: had a duplicate " I40.0.0.0" field below SU that was a
+    --// no-op against luadch's first-wins parser but syntactically
+    --// malformed per ADC (one named-param appearance per frame).
+    --// #26: US (max upload speed in bytes/sec) added so hub-side
+    --// stats / top-uploader / freshstuff scripts count the announcer.
+    --// Default 0 = no claim; operators can raise via cfg.botupload.
     local CLIENT_BINF = "BINF " ..
                         sid ..
                         " NI" .. adclib.escape( tostring( hub.nick ) ) ..
@@ -152,10 +158,10 @@ net.loop = function()
                         " ID" .. id.cid ..
                         " SS" .. bshare ..
                         " SL" .. cfg.botslots ..
+                        " US" .. ( tonumber( cfg.botupload ) or 0 ) ..
                         " HN" .. "0" ..
                         " HR" .. "0" ..
                         " HO" .. "0" ..
-                        " I4" .. "0.0.0.0" ..
                         " AW" .. "2" ..
                         " SU" .. "OSNR,ADC0,ADCS,TCP4,UDP4" ..
                         " I40.0.0.0\n"
