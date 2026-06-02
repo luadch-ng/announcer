@@ -320,7 +320,13 @@ jobs:
       - name: Install build dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y build-essential cmake libssl-dev libgtk-3-dev
+          # xvfb: virtual X11 server. wxLua's luaopen_wx() calls
+          # wxEntryStart() which calls gtk_init() at module-load time;
+          # gtk_init requires a real or virtual DISPLAY. Without xvfb
+          # the require-wx smoke below fails with "Unable to initialize
+          # GTK+, is DISPLAY set properly?". Windows wxLua loads without
+          # a display because wxMSW doesn't need one for app init.
+          sudo apt-get install -y build-essential cmake libssl-dev libgtk-3-dev xvfb
 
       - name: Configure (BUILD_GUI=ON)
         run: cmake -B build -DCMAKE_BUILD_TYPE=Release -DBUILD_GUI=ON
@@ -352,11 +358,13 @@ jobs:
       - name: Require-wx smoke (load chain only, no window)
         run: |
           cd build/install/announcer
-          # `|| true` so set -e doesn't kill the script when the subshell
-          # exits non-zero (e.g. Lua's os.exit(1) on require failure).
-          # We need echo "$output" to actually print so the failure
-          # reason is visible in the CI log.
-          output=$(./lua -e 'package.cpath = package.cpath .. [[;././lib/?/?.so]]; local ok, m = pcall(require, "wx"); if not ok then io.stderr:write("FAIL: "..tostring(m).."\n"); os.exit(1) end; print("SMOKE OK: require wx OK, wx.wxVERSION_STRING = " .. tostring(m.wxVERSION_STRING))' 2>&1) || true
+          # `xvfb-run` wraps a virtual X11 display so wxLua's
+          # gtk_init at luaopen_wx time has a DISPLAY to bind. Without
+          # it: "Error: Unable to initialize GTK+, is DISPLAY set
+          # properly?" -> luaopen_wx pushes false -> caller crashes.
+          # `|| true` so set -e doesn't kill the script when the
+          # subshell exits non-zero.
+          output=$(xvfb-run -a ./lua -e 'package.cpath = package.cpath .. [[;././lib/?/?.so]]; local ok, m = pcall(require, "wx"); if not ok then io.stderr:write("FAIL: "..tostring(m).."\n"); os.exit(1) end; print("SMOKE OK: require wx OK, wx.wxVERSION_STRING = " .. tostring(m.wxVERSION_STRING))' 2>&1) || true
           echo "$output"
           echo "$output" | grep -q "SMOKE OK" \
             || { echo "GUI BUILD SMOKE FAIL"; exit 1; }
