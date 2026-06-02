@@ -91,6 +91,65 @@ local directory_has_valid_sfv = function( path )
     return false
 end
 
+--// #28: hidden-file filter. Dot-prefix only - covers Unix conventions
+--// (.git, .vscode, .DS_Store, dotfiles) and Windows tool-created dirs
+--// that follow the same convention. Windows FILE_ATTRIBUTE_HIDDEN on
+--// non-dot-named folders is NOT checked here (LFS doesn't expose it
+--// and we have no wx dependency in core); operators with that need
+--// use the per-rule blacklist instead.
+local is_hidden = function( name )
+    return type( name ) == "string" and name:sub( 1, 1 ) == "."
+end
+
+--// #29: per-extension count helper. Walks `path`, returning a table
+--// mapping lowercase-extension -> count. With `recursive = true` also
+--// descends into subfolders (catches sample-folder dirty-bundle
+--// patterns like a second .nfo inside Sample/). pcall around lfs.dir
+--// so permission errors on subdirs don't break the announce loop.
+local count_files_by_ext = function( path, recursive )
+    local counts = { }
+    local walk
+    walk = function( p )
+        --// lfs.dir returns (iter_fn, state); both required for the
+        --// generic-for to step. pcall guards against permission errors
+        --// on subdirs so an unreadable dir doesn't kill the announce loop.
+        local ok, iter, state = pcall( lfs.dir, p )
+        if not ok or not iter then return end
+        for file in iter, state do
+            if file ~= "." and file ~= ".." then
+                local f = p .. "/" .. file
+                local mode = lfs.attributes( f, "mode" )
+                if mode == "file" then
+                    --// lfs.dir returns bare filenames so we only need
+                    --// to exclude dot from the extension class.
+                    local ext = string.match( file, "%.([^%.]+)$" )
+                    if ext then
+                        ext = ext:lower()
+                        counts[ ext ] = ( counts[ ext ] or 0 ) + 1
+                    end
+                elseif mode == "directory" and recursive then
+                    walk( f )
+                end
+            end
+        end
+    end
+    walk( path )
+    return counts
+end
+
+--// #29: returns (ext, count, max) for the first extension whose count
+--// exceeds its configured cap, or nil if the bundle is within limits.
+local find_extension_excess = function( path, limits, recursive )
+    if type( limits ) ~= "table" then return nil end
+    local counts = count_files_by_ext( path, recursive )
+    for ext, max in pairs( limits ) do
+        if ( counts[ ext ] or 0 ) > max then
+            return ext, counts[ ext ], max
+        end
+    end
+    return nil
+end
+
 local search = function( path, cfg, found )
     local count = 0
     for release in lfs.dir( path ) do
@@ -98,6 +157,16 @@ local search = function( path, cfg, found )
         local mode, err = lfs.attributes( f ).mode
 
         if ( release ~= "." ) and ( release ~= "..") and ( not announce.blocked[ release ] ) and ( not alreadysent[ release ] ) then
+            --// #29: pre-compute the extension-excess result so the
+            --// elseif chain below can stay lazy AND clean. Walk only
+            --// happens if the operator opted in via cfg.max_per_extension
+            --// AND the entry is a directory (calling lfs.dir on a file
+            --// would silently no-op via the pcall in find_extension_excess
+            --// but pre-compute is wasted work in that case).
+            local excess_ext, excess_cnt, excess_max
+            if cfg.max_per_extension and mode == "directory" then
+                excess_ext, excess_cnt, excess_max = find_extension_excess( f, cfg.max_per_extension, cfg.max_per_extension_recursive ~= false )
+            end
             --// blacklist check
             if match( release, cfg.blacklist ) then
                 count = count + 1
@@ -106,6 +175,12 @@ local search = function( path, cfg, found )
             elseif ( not match( release, cfg.whitelist, true ) ) then
                 count = count + 1
                 log.event( "Release: '" .. release .. "' blocked. | Reason: " .. "Whitelist" )
+            --// #28: hidden check (dot-prefix). Default ON; rule can opt
+            --// out with `skip_hidden = false` if hidden-named releases
+            --// are legitimate for that rule.
+            elseif ( cfg.skip_hidden ~= false and is_hidden( release ) ) then
+                count = count + 1
+                log.event( "Release: '" .. release .. "' blocked. | Reason: " .. "Hidden (dot-prefix)" )
             --// whitespaces check
             elseif ( cfg.checkspaces and check_for_whitespaces( release ) ) then
                 count = count + 1
@@ -122,6 +197,10 @@ local search = function( path, cfg, found )
             elseif ( cfg.checkdirs and cfg.checkdirssfv and not directory_has_valid_sfv( f ) ) then
                 count = count + 1
                 log.event( "Release: '" .. release .. "' blocked. | Reason: " .. "SFV Check" )
+            --// #29: per-extension count cap. excess_* pre-computed above.
+            elseif excess_ext then
+                count = count + 1
+                log.event( "Release: '" .. release .. "' blocked. | Reason: too many ." .. excess_ext .. " files (" .. excess_cnt .. " > " .. excess_max .. ")" )
             else
                 --found[ release ] = cfg
                 if mode then
