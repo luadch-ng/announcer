@@ -169,12 +169,8 @@ build/install/announcer/ default install root (cmake --install
                    DLLs + the runtime tree (core/ cfg/ frontends/ certs/
                    log/ + lib/<dep>/<artefact>).
 
---- Bundled binaries still committed (transient) ---
-lib/lfs_wx/lfs.dll        Lua-5.1 build for the wxLua-2.8 GUI. Phase 3 GUI
-                          rework on wxLua 3.x will replace.
-lib/ressources/*.dll      GUI icon-resource bundles (wxLua 2.8 frozen). Phase
-                          2 PR-E will replace with sourced-from-PNG runtime
-                          loading.
+--- GUI assets ---
+lib/ressources/png/*.png  App icon (3 sizes) + GPL badge + 5 tab icons.
 
 certs/             OpenSSL cert-generation scripts (.bat + .sh).
 log/               Runtime logs (gitignored except .gitkeep).
@@ -252,12 +248,7 @@ security / consistency / smoke audit across all 3 PRs returned 0
 blockers + 6 nits, all addressed inline or tracked for later
 phases.
 
-Phase 2 (separate, queued): adopt hub's CMake 1:1 + cross-platform
-CI matrix. Build `.so`/`.dylib` for adclib/luasec/luasocket/lfs/
-unicode-shim. Replace `lib/ressources/*.dll` opaque resource bundles
-with sourced-from-PNG resource loading.
-
-### Phase 2 - CMake + cross-platform CLI [IN PROGRESS]
+### Phase 2 - CMake + cross-platform CLI [SHIPPED 2026-06-01]
 
 Goal: real Linux + Windows CLI via in-tree CMake + CI matrix.
 
@@ -313,13 +304,27 @@ PR-D (queued): the 2 TODO(phase-2) source markers in `core/init.lua`
 PR-E (queued): replace `lib/ressources/{res1,res2}.dll` opaque GUI
 resource bundles with sourced-from-PNG resource loading at runtime.
 
-### Phase 3 - GUI on Lua 5.4 [QUEUED, highest risk]
+### Phase 3 - GUI on Lua 5.4 [SHIPPED Tier 1+2 on 2026-06-01/02]
 
-wxLua 2.8 is from 2014 and Lua-5.1-only. Modern wxLua 3.x may or
-may not have stable 5.4 bindings - investigate first. Worst case:
-GUI stays on a separate Lua-5.1 sandbox while CLI/core run on 5.4;
-or GUI is rewritten in something else. This phase is isolated as
-last so CLI/core deliver value independently even if the GUI lags.
+Tier 1 (#16): Announcer.wx.lua ported from the wxLua-2.8 API to
+wxLua 3.x (filetype-detect fix, drop `lib/jit` dead path, PNG icon
+migration replacing the upstream PE-icon-container .dll blobs,
+wxBitmap-construction anti-patterns, wxTE_PROCESS_ENTER flag, etc.).
+TLS-mode RadioBox trimmed to TLSv1.3 only (luadch-ng is TLSv1.3-only
+by design).
+
+Tier 2 (#18 + #19 + #20 + #21): vendored wxWidgets 3.2.10 (git
+submodule) + wxLua source (in-tree from OneLuaPro/wxlua fork), wired
+into the same CMake pipeline behind `-DBUILD_GUI=ON`. wx.dll links
+against our existing lua.dll (no static-link duplication). MinGW
+runtime DLLs bundled at install root on Windows. RPATH set so wx.so
+can find the wxGTK libs at install root on Linux. CI matrix coverage
+for the GUI build on both Linux + Windows; runtime smoke uses
+xvfb-run on Linux for the headless DISPLAY.
+
+Tier 3 (optional, [#7](https://github.com/luadch-ng/announcer/issues/7)):
+status.lua poll race window via in-process events (now feasible
+because GUI + worker share lua.dll).
 
 ---
 
@@ -368,11 +373,10 @@ last so CLI/core deliver value independently even if the GUI lags.
   `adclib`/`luasec`/`luasocket`/`lua/src`/`basexx`/`slnunicode`, an
   announcer follow-up PR mirrors the change + re-runs the build +
   documents the sync date in `BUNDLED.md`. Avoid drift.
-- **`lib/` runtime artefacts** (`adclib.dll`, `lfs.dll`, etc.) are
-  NOT committed since Phase 2; they're CMake outputs. The only
-  committed binaries left in `lib/` are `lfs_wx/` (Phase 3 scope)
-  and `lib/ressources/` (Phase 2 PR-E scope). New binary blobs need
-  `BUNDLED.md` provenance.
+- **`lib/` runtime artefacts** (`adclib.dll`, `lfs.dll`, `wx.dll`,
+  wxWidgets DLLs, MinGW runtime DLLs, etc.) are NOT committed; they're
+  CMake outputs. The repo carries only `lib/ressources/png/` (PNG
+  assets). New binary blobs need `BUNDLED.md` provenance.
 - **Local Lua-syntax check** before push (using the CMake-built
   lua.exe in the install dir):
   ```
@@ -406,11 +410,15 @@ Output lands at `build/install/announcer/`. From there:
 3. Edit `cfg/rules.lua` (which directories to scan).
 4. Run:
    ```
-   lua.exe frontends/cli/main.lua
+   lua.exe frontends/cli/main.lua          # CLI
+   lua.exe frontends/gui/Announcer.wx.lua  # GUI (needs -DBUILD_GUI=ON at configure)
    ```
-   (GUI workflow: Phase 3 will reintroduce a modern wxLua-3 GUI;
-   until then the wxLua-2.8 `Announcer.exe` still works against the
-   Phase-1-shipped layout but needs its own wxluafreeze step.)
 
-Linux / macOS: Phase 2 PR-B work (the CMakeLists is portable, just
-needs CI verification + .so/.dylib production).
+Linux: Phase 3 Tier 2c verified - same `cmake -B build` + `--build`
++ `--install` chain, no MinGW runtime bundle needed (system libgcc /
+libstdc++). GUI needs `libgtk-3-dev` at build time.
+
+macOS: untested. Source compiles in principle; the wxWidgets build
+requires Cocoa headers (Xcode SDK) and additional wxLua macOS
+binding files we vendored from OneLuaPro's master. Real work for a
+future phase.
