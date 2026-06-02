@@ -8,13 +8,13 @@ This repo consolidates two stale upstream tools - [`luadch/announcer_client`](ht
 
 ## Status
 
-**Phase 0** (SHIPPED 2026-05-30, v1.0.0-pre): consolidated tree, Lua 5.1. CLI + GUI moved into one repo; events dispatch replaces upstream's file-IPC.
+**Phase 0** (SHIPPED 2026-05-30): consolidated tree, Lua 5.1. CLI + GUI moved into one repo; events dispatch replaces upstream's file-IPC.
 
-**Phase 1** (SHIPPED 2026-06-01, v1.0.0-dev): core + CLI migrated to Lua 5.4. Hub-vendored 5.4 deps (binary copies from hub's build); 2 upstream parser bugs fixed; events.lua pcall safety; wxLua-GUI file-IPC bridge via `frontends/gui/spawned_worker.lua`.
+**Phase 1** (SHIPPED 2026-06-01): core + CLI migrated to Lua 5.4. Hub-vendored 5.4 deps; 2 upstream parser bugs fixed; events.lua pcall safety; wxLua-GUI file-IPC bridge via `frontends/gui/spawned_worker.lua`.
 
-**Phase 2** (IN PROGRESS): CMake build pipeline. PR-A (this PR) adopts the hub's CMake 1:1 + adds a standalone `lua.exe` build target + vendors lfs source from upstream. **After this PR the announcer ships source-only**: `lua.exe`, `lua.dll`, OpenSSL DLLs, and the `lib/<dep>/<artefact>` C-extension binaries are CMake outputs at `build/install/announcer/` rather than committed blobs. PR-B is Linux build verification; PR-C is GitHub Actions CI matrix; PR-D is the 2 TODO(phase-2) source markers; PR-E replaces GUI resource `.dll` blobs with PNG loading.
+**Phase 2** (SHIPPED 2026-06-01): CMake build pipeline; source-only repo (every C-extension is a build artefact); Linux+Windows CI matrix; path-anchored entry points via `frontends/bootstrap.lua`.
 
-**Phase 3** (planned, biggest risk): GUI on Lua 5.4 + wxLua 3.x. wxLua 2.8 is ancient. The GUI may lag behind core+CLI, stay Windows-only, or be rebuilt later. Closes [#7](https://github.com/luadch-ng/announcer/issues/7) (status.lua poll race window).
+**Phase 3** (SHIPPED Tier 1+2 on 2026-06-01/02): GUI on Lua 5.4 + wxLua 3.x. Tier 1 ported Announcer.wx.lua to the wxLua-3.x API + migrated PE-icon containers to PNG. Tier 2 vendored wxWidgets 3.2.10 (submodule) + wxLua source (in-tree), wired the wxLua C-extension into the same CMake pipeline, gated behind `-DBUILD_GUI=ON`. Cross-platform GUI build (Linux + Windows) verified in CI. Tier 2e (docs, this update) closes the modernisation programme. Optional Tier 3 closes [#7](https://github.com/luadch-ng/announcer/issues/7) (status.lua poll race window).
 
 ## Layout
 
@@ -95,12 +95,22 @@ lua.exe frontends/cli/main.lua
 Log output lands in `log/logfile.txt` and announced releases in `log/announced.txt`.
 
 For a no-build alternative (release zip with the binaries pre-built),
-watch the [GitHub releases](https://github.com/luadch-ng/announcer/releases)
-page once Phase 2 PR-C ships the CI build artefacts.
+see [GitHub releases](https://github.com/luadch-ng/announcer/releases).
 
-## Usage (GUI, Phase 0, Windows)
+## Usage (GUI, Linux + Windows)
 
-Existing upstream workflow still applies for Phase 0. The freeze recipe (using `wxluafreeze`) is in [docs/BUILDING_GUI.md](docs/BUILDING_GUI.md) (TBD).
+Build the GUI explicitly with `-DBUILD_GUI=ON`:
+
+```sh
+git submodule update --init --recursive   # pulls wxWidgets 3.2.10
+cmake -B build -DCMAKE_BUILD_TYPE=Release -DBUILD_GUI=ON   # add -G "MinGW Makefiles" -DOPENSSL_ROOT_DIR=... on Windows
+cmake --build build -j 2                  # -j 2 keeps RAM under control during wxWidgets compile
+cmake --install build
+cd build/install/announcer
+lua frontends/gui/Announcer.wx.lua        # lua.exe on Windows
+```
+
+Linux needs `libgtk-3-dev` (build) + optionally `xvfb` for headless smoke. The install tree is self-sufficient on both platforms (no system wxWidgets / wxLua required). Full build recipe: [docs/BUILDING.md](docs/BUILDING.md).
 
 ## Requirements
 

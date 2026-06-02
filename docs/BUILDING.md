@@ -45,23 +45,31 @@ cmake --build build -j
 cmake --install build
 ```
 
-### Opting in to the GUI build (Phase 3 Tier 2+)
+### Opting in to the GUI build
 
 The wxLua-3.x GUI runtime is gated behind `-DBUILD_GUI=ON`. Default is
 OFF so the CLI smoke + CI matrix don't pay the wxWidgets-build cost
-(~5 min) on every push. To get a working GUI:
+(~5-10 min) on every push. To get a working GUI:
 
 ```sh
 git submodule update --init --recursive   # one-time, pulls wxWidgets 3.2.10
 cmake -B build -G "MinGW Makefiles" -DCMAKE_BUILD_TYPE=Release -DOPENSSL_ROOT_DIR=C:/OpenSSL -DBUILD_GUI=ON
-cmake --build build -j
+cmake --build build -j 2     # -j 2 on Windows: full -j OOMs on
+                              # 16 GB runners; large wxcore TUs eat 1-2 GB each
 cmake --install build
 ```
 
-Tier 2a (#17 sub-task) ships only the wxWidgets-3.2.10 part of this
-chain: wxbase + wxcore + wxadv DLLs build cleanly. Tier 2b adds the
-wxLua glue that produces `lib/wx/wx.dll`; until then the GUI still
-needs the local OneLuaPro overlay tested in Tier 0.
+After `cmake --install build` the install tree contains a complete
+self-sufficient GUI runtime: `lib/wx/wx.dll` (the Lua C-extension),
+the wxWidgets shared libs at install root (`wxbase32u_*.dll`,
+`wxmsw32u_core_*.dll`, etc), and the MinGW C/C++ runtime DLLs
+(`libgcc_s_seh-1.dll`, `libstdc++-6.dll`, `libwinpthread-1.dll`).
+Run the GUI with:
+
+```sh
+cd build/install/announcer
+./lua.exe frontends/gui/Announcer.wx.lua
+```
 
 Output lands at `build/install/announcer/`:
 
@@ -81,9 +89,23 @@ build/install/announcer/
   lib/lfs/lfs.dll            LuaFileSystem
   lib/luasec/{lua/ssl.lua, ssl/ssl.dll}
   lib/luasocket/{lua/*.lua, mime/mime.dll, socket/socket.dll}
-  lib/ressources/            GUI assets
+  lib/ressources/            GUI PNG assets
   lib/unicode/unicode.lua    pure-Lua utf-8 shim
   log/                        empty, populated at runtime
+```
+
+With `-DBUILD_GUI=ON` you additionally get:
+```
+build/install/announcer/
+  lib/wx/wx.dll                   wxLua C-extension (3.6 MB)
+  wxbase32u_*_custom.dll          wxWidgets base lib (~4 MB)
+  wxmsw32u_core_*_custom.dll      wxWidgets core (~11 MB)
+  wxmsw32u_adv_*_custom.dll       wxWidgets advanced (~16 KB; mostly moved to core in 3.x)
+  wxmsw32u_html_*_custom.dll      wxWidgets HTML (~1 MB; pulled in by binding refs to wxBestHelpController)
+  wxbase32u_net_*_custom.dll      wxWidgets net (~500 KB; pulled in by binding refs to wxInternetFSHandler)
+  libgcc_s_seh-1.dll              MinGW C runtime (~900 KB)
+  libstdc++-6.dll                 MinGW C++ runtime (~2.5 MB)
+  libwinpthread-1.dll             MinGW pthreads (~70 KB)
 ```
 
 ## Run (Windows)
@@ -95,10 +117,28 @@ cd certs && make_cert.bat && cd ..    # OpenSSL on PATH; generates serverkey.pem
 notepad cfg/hub.lua                    # set addr / nick / pass / keyprint
 notepad cfg/rules.lua                  # set watched directories
 # Run:
-lua.exe frontends/cli/main.lua         # CLI
-# or:
-# Phase 3 will reintroduce a wxLua-3 GUI; until then use the spawned_worker via the legacy wxLua 2.8 Announcer.exe (Phase 0 inheritance, separately built).
+lua.exe frontends/cli/main.lua         # CLI (always available)
+lua.exe frontends/gui/Announcer.wx.lua # GUI (only when built with -DBUILD_GUI=ON)
 ```
+
+## Build (Linux)
+
+```sh
+sudo apt-get install -y build-essential cmake libssl-dev libgtk-3-dev xvfb
+git submodule update --init --recursive   # only needed for the GUI build
+cmake -B build -DCMAKE_BUILD_TYPE=Release
+cmake --build build -j 2
+cmake --install build
+```
+
+Linux uses the system's GTK3 + GLib + glibc, so no MinGW-style
+runtime bundling. `libgtk-3-dev` is only required when building with
+`-DBUILD_GUI=ON`. `xvfb` is only required if you want to load the wx
+module without a real X11 display (e.g. CI smoke).
+
+`-j 2` on the build line keeps RAM under control on 16 GB machines /
+runners; the wxWidgets C++ TUs are heavy. Use `-j` unconstrained on
+larger boxes.
 
 ## Vendored sources
 

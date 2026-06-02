@@ -16,6 +16,7 @@ This file documents the per-source upstream provenance + sync policy.
 | `luasec/`             | hub's `luadch-ng/luadch:luasec` (upstream LuaSec 1.3.2)     | mirrored                | `lib/luasec/ssl/ssl.dll`       |
 | `luasocket/`          | hub's `luadch-ng/luadch:luasocket` (upstream LuaSocket 3.1.0) | mirrored              | `lib/luasocket/socket/socket.dll` + `lib/luasocket/mime/mime.dll` |
 | `lfs/src/`            | upstream [`lunarmodules/luafilesystem`](https://github.com/lunarmodules/luafilesystem) | **v1.9.0** (cloned 2026-06-01) | `lib/lfs/lfs.dll` |
+| `wxlua/`              | [`OneLuaPro/wxlua`](https://github.com/OneLuaPro/wxlua) (active fork of pkulchenko/wxlua) | **SHA `c5e0cbb`** (dated 2026-02-27, snapshot) | `lib/wx/wx.dll` (only built with `-DBUILD_GUI=ON`) |
 
 ## In-tree vendored pure-Lua sources
 
