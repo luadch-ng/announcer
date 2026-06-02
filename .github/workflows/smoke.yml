@@ -216,3 +216,79 @@ jobs:
           echo "$output" | grep -q "error loading private key" \
             || { echo "SMOKE FAIL: chain did not reach ssl.newcontext"; exit 1; }
           echo "SMOKE OK: anchored path silent + reaches ssl.newcontext"
+
+  # ---------------------------------------------------------------------------
+  # Phase 3 Tier 2d (#17): exercise the BUILD_GUI=ON path. Builds the
+  # vendored wxWidgets + wxLua + wx.dll. Build-only smoke (no runtime
+  # check) because the GUI process needs a real display, which the
+  # headless runner doesn't have. A runtime GUI smoke would require
+  # a virtual display (Xvfb on Linux, headless wxWidgets variant on
+  # Windows) - out of scope for this tier.
+  #
+  # The job is intentionally separate from the CLI smoke jobs above:
+  # different checkout (submodules: recursive), different CMake flags,
+  # different verification. Default CLI smoke stays fast (~30 s) by
+  # NOT triggering the wxWidgets build.
+  #
+  # Linux is added by Tier 2c. This tier covers Windows only.
+  # ---------------------------------------------------------------------------
+  gui-build-windows:
+    name: GUI Build Windows x86_64 (MinGW UCRT64, BUILD_GUI=ON)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - uses: msys2/setup-msys2@v2
+        with:
+          msystem: UCRT64
+          update: true
+          install: >-
+            mingw-w64-ucrt-x86_64-gcc
+            mingw-w64-ucrt-x86_64-cmake
+            mingw-w64-ucrt-x86_64-make
+            mingw-w64-ucrt-x86_64-openssl
+
+      - name: Configure (BUILD_GUI=ON)
+        shell: msys2 {0}
+        run: cmake -B build -G "MinGW Makefiles" -DCMAKE_BUILD_TYPE=Release -DOPENSSL_ROOT_DIR=/ucrt64 -DBUILD_GUI=ON
+
+      - name: Build (full)
+        shell: msys2 {0}
+        run: cmake --build build -j
+
+      - name: Install
+        shell: msys2 {0}
+        run: cmake --install build
+
+      - name: Verify GUI install-tree shape
+        shell: msys2 {0}
+        run: |
+          test -f build/install/announcer/lib/wx/wx.dll
+          # Bundled wxWidgets shared libs (Tier 2b install rules)
+          ls build/install/announcer/wxbase32u_*.dll
+          ls build/install/announcer/wxmsw32u_core_*.dll
+          ls build/install/announcer/wxmsw32u_adv_*.dll
+          ls build/install/announcer/wxmsw32u_html_*.dll
+          # MinGW C/C++ runtime DLLs (without these wx.dll cannot load
+          # outside of a MinGW PATH).
+          test -f build/install/announcer/libgcc_s_seh-1.dll
+          test -f build/install/announcer/libstdc++-6.dll
+          test -f build/install/announcer/libwinpthread-1.dll
+          echo "GUI install-tree shape OK"
+
+      # Load-only smoke: spin up our bundled lua.exe and require "wx".
+      # If wx.dll loads + initialises wx.wxVERSION_STRING resolves, we
+      # know the entire dependency chain (lua.dll + wxbase + wxcore +
+      # wxhtml + wxnet + MinGW runtime) loads correctly on a fresh
+      # runner. We deliberately do NOT construct a wxFrame because
+      # that needs a real display.
+      - name: Require-wx smoke (load chain only, no window)
+        shell: msys2 {0}
+        run: |
+          cd build/install/announcer
+          output=$(./lua.exe -e 'package.cpath = package.cpath .. [[;././lib/?/?.dll]]; local ok, m = pcall(require, "wx"); if not ok then io.stderr:write("FAIL: "..tostring(m).."\n"); os.exit(1) end; print("SMOKE OK: require wx OK, wx.wxVERSION_STRING = " .. tostring(m.wxVERSION_STRING))' 2>&1)
+          echo "$output"
+          echo "$output" | grep -q "SMOKE OK" \
+            || { echo "GUI BUILD SMOKE FAIL"; exit 1; }
