@@ -23,7 +23,12 @@ set(WXLUA_MOD ${CMAKE_CURRENT_SOURCE_DIR}/modules)
 set(WXLUA_CORE_SRC
     ${WXLUA_MOD}/wxlua/wxlbind.cpp
     ${WXLUA_MOD}/wxlua/wxlcallb.cpp
-    ${WXLUA_MOD}/wxlua/wxlconsole.cpp
+    # wxlconsole.cpp not compiled - it's the wxLua debug-console window
+    # (a wxFrame that shows the Lua print output and stack on errors).
+    # The announcer doesn't use it (we have our own log_window inside
+    # Announcer.wx.lua). Dropping the source also avoids needing to
+    # vendor wxLua's art/ subtree just to satisfy the XPM #include
+    # at line 29.
     ${WXLUA_MOD}/wxlua/wxllua.cpp
     ${WXLUA_MOD}/wxlua/wxlobject.cpp
     ${WXLUA_MOD}/wxlua/wxlstate.cpp
