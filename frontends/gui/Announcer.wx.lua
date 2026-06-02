@@ -3667,13 +3667,19 @@ end
 
 --// file handler
 local log_handler_last
-local log_handler = function( file, parent, mode, button, count, broadcast )
+local log_handler = function( file, parent, mode, button, count, broadcast, silent )
     local path = wx.wxGetCwd() .. "\\"
     local str
     if mode == "read" then
         if check_file( file ) then
             button:Disable()
-            log_broadcast( log_window, "Reading text from: '" .. file .. "'" )
+            --// #24: timer auto-refresh passes silent=true so the
+            --// "Reading text from" status line doesn't accumulate every
+            --// 60s in the log window. User-button-driven calls leave
+            --// the default (nil) so a manual Load still gets feedback.
+            if not silent then
+                log_broadcast( log_window, "Reading text from: '" .. file .. "'" )
+            end
 
             parent:LoadFile( path .. file )
             if parent:GetValue() == "" then
@@ -3710,7 +3716,18 @@ local log_handler = function( file, parent, mode, button, count, broadcast )
             log_broadcast( log_window, "Info: Error while cleaning text from: '" .. file .. "', file not found, created new one." )
         end
     end
-    log_handler_last = { [ "file" ] = file, [ "path" ] = path, [ "time" ] = lfs.attributes( path .. file ).modification, [ "size" ] = wx.wxFileSize( path .. file ), [ "count" ] = count }
+    --// #24 review: defensive read so a file vanishing between check_file
+    --// and here doesn't crash on the nil .modification, and so the seed's
+    --// size/time normalisation matches the timer guard's. Both sides use
+    --// `or 0` for a stable comparison if the file is missing.
+    local seed_attr = lfs.attributes( path .. file )
+    log_handler_last = {
+        [ "file" ] = file,
+        [ "path" ] = path,
+        [ "time" ] = seed_attr and seed_attr.modification or 0,
+        [ "size" ] = wx.wxFileSize( path .. file ) or 0,
+        [ "count" ] = count,
+    }
 end
 
 --// border - logfile.txt
@@ -3808,10 +3825,19 @@ timer = wx.wxTimer( panel )
 panel:Connect( wx.wxEVT_TIMER, function( event )
     set_logfilesize( control_logsize_log_sensor, control_logsize_ann_sensor, control_logsize_exc_sensor )
     if type( log_handler_last ) == "table" then
-        -- local changed = wx.wxFileSize( log_handler_last[ "path" ] .. log_handler_last[ "file" ] ) ~= log_handler_last[ "size" ]
-        -- local time = lfs.attributes( log_handler_last[ "path" ] .. log_handler_last[ "file" ] ).modification == log_handler_last[ "time" ]
-        log_handler( log_handler_last[ "file" ], logfile_window, "read", button_load_logfile, log_handler_last[ "count" ] )
-        set_logfilesize( control_logsize_log_sensor, control_logsize_ann_sensor, control_logsize_exc_sensor )
+        --// #24: only re-read if the file actually changed since the
+        --// last read (size or mtime differs). Skips wasted I/O + UI
+        --// repaint when the announcer is idle. silent=true on the
+        --// log_handler call suppresses the "Reading text from"
+        --// status line that previously fired every 60s.
+        local full_path = log_handler_last[ "path" ] .. log_handler_last[ "file" ]
+        local size_now = wx.wxFileSize( full_path ) or 0
+        local mtime_attr = lfs.attributes( full_path )
+        local mtime_now = mtime_attr and mtime_attr.modification or 0
+        if size_now ~= log_handler_last[ "size" ] or mtime_now ~= log_handler_last[ "time" ] then
+            log_handler( log_handler_last[ "file" ], logfile_window, "read", button_load_logfile, log_handler_last[ "count" ], nil, true )
+            set_logfilesize( control_logsize_log_sensor, control_logsize_ann_sensor, control_logsize_exc_sensor )
+        end
     end
 end )
 
