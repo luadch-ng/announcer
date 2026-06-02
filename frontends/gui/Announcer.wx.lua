@@ -545,6 +545,18 @@ local trim = function( s )
     return string.find( s, "^%s*$" ) and "" or string.match( s, "^%s*(.*%S)" )
 end
 
+--// #27: scene-release-name char set for rule + category names.
+--// Restricts shell-illegal chars (/ \ ? < > | * : "), internal spaces,
+--// invisible Unicode (ZWSP/NBSP/etc., which pass trim()'s ASCII-only
+--// whitespace strip), and control chars. All of these break path ops,
+--// ADC framing, or duplicate-detection downstream. Allowed: letters,
+--// digits, dot, underscore, dash, parens.
+local SAFE_NAME_PATTERN = "^[A-Za-z0-9._%-()]+$"
+local is_safe_name = function( s )
+    return type( s ) == "string" and s:match( SAFE_NAME_PATTERN ) ~= nil
+end
+local SAFE_NAME_HINT = "Allowed: A-Z a-z 0-9 . _ - ( )"
+
 --// check for whitespaces in wxTextCtrl
 check_for_whitespaces_textctrl = function( parent, control, skip )
     local s = control:GetValue()
@@ -2933,8 +2945,25 @@ local add_rule = function( rules_listview, treebook, t )
         function( event )
             t.rulename = trim( dialog_rule_add_textctrl:GetValue() ) or ""
             t.category = dialog_rule_add_choicectrl:GetStringSelection()
-            if t.rulename == "" then di:Destroy() end
-            if table.hasValue( tables[ "rules" ], t.rulename, "rulename" ) then
+            --// #27 review: must `return` after Destroy, otherwise the
+            --// is_safe_name check below trips on the empty string and
+            --// logs a spurious "invalid characters" error.
+            if t.rulename == "" then di:Destroy(); return end
+            --// #27: belt-and-suspenders char validation at the OK
+            --// button click. The TEXT_UPDATED handler should keep the
+            --// button disabled on invalid input, but this guards
+            --// against any path that bypassed it (paste-then-Enter
+            --// before the update event fires, programmatic events).
+            if not is_safe_name( t.rulename ) then
+                log_broadcast(
+                    log_window,
+                    {
+                        validate.getTab( 4 ),
+                        "Add Rule",
+                        "Error: Rule name '" .. t.rulename .. "' has invalid characters. " .. SAFE_NAME_HINT
+                    }
+                )
+            elseif table.hasValue( tables[ "rules" ], t.rulename, "rulename" ) then
                 log_broadcast(
                     log_window,
                     {
@@ -2972,14 +3001,25 @@ local add_rule = function( rules_listview, treebook, t )
         local rulename = trim( dialog_rule_add_textctrl:GetValue() )
         local categoryname = dialog_rule_add_choicectrl:GetSelection()
         if type( enabled ) == "nil" then
-            enabled = ( rulename ~= "" and not table.hasValue( tables[ "rules" ], rulename, "rulename" ) and categoryname ~= -1 )
+            --// #27: also gate on safe-name char set (no spaces, no
+            --// shell-illegal chars, no invisible Unicode).
+            enabled = ( rulename ~= ""
+                and is_safe_name( rulename )
+                and not table.hasValue( tables[ "rules" ], rulename, "rulename" )
+                and categoryname ~= -1 )
         end
         dialog_rule_add_button:Enable( enabled )
     end
     dialog_rule_add_textctrl:Connect( id_textctrl_add_rule, wx.wxEVT_COMMAND_TEXT_UPDATED,
         function( event )
             local rulename = trim( dialog_rule_add_textctrl:GetValue() ) or ""
-            if table.hasValue( tables[ "rules" ], rulename, "rulename" ) then
+            --// #27: status-bar feedback for invalid chars takes
+            --// precedence over uniqueness feedback (more actionable
+            --// for the user typing a bad value).
+            if rulename ~= "" and not is_safe_name( rulename ) then
+                sb:SetStatusText( "Invalid characters in rule name. " .. SAFE_NAME_HINT, 0 )
+                dialog_rule_add_event( event, false )
+            elseif table.hasValue( tables[ "rules" ], rulename, "rulename" ) then
                 sb:SetStatusText( "Rule name '" .. rulename .. "' already taken", 0 )
                 dialog_rule_add_event( event, false )
             else
@@ -3238,8 +3278,21 @@ local add_category = function( categories_listview )
         function( event )
             check_for_whitespaces_textctrl( frame, dialog_category_add_textctrl )
             local categoryname = trim( dialog_category_add_textctrl:GetValue() ) or ""
-            if categoryname == "" then di:Destroy() end
-            if table.hasValue( tables[ "categories" ], categoryname, "categoryname" ) then
+            --// #27 review: must `return` after Destroy, otherwise the
+            --// is_safe_name check below trips on the empty string and
+            --// logs a spurious "invalid characters" error.
+            if categoryname == "" then di:Destroy(); return end
+            --// #27: belt-and-suspenders char validation at OK click
+            --// (same shape as add_rule above).
+            if not is_safe_name( categoryname ) then
+                log_broadcast(
+                    log_window,
+                    {
+                        validate.getTab( 5 ),
+                        "Add Category", "Error: Category name '" .. categoryname .. "' has invalid characters. " .. SAFE_NAME_HINT
+                    }
+                )
+            elseif table.hasValue( tables[ "categories" ], categoryname, "categoryname" ) then
                 log_broadcast(
                     log_window,
                     {
@@ -3276,7 +3329,12 @@ local add_category = function( categories_listview )
             local categoryname = trim( dialog_category_add_textctrl:GetValue() ) or ""
             local enabled = ( categoryname ~= "" )
             if enabled then
-                if table.hasValue( tables[ "categories" ], categoryname, "categoryname" ) then
+                --// #27: char-set check takes precedence over uniqueness
+                --// in the status-bar feedback (more actionable hint).
+                if not is_safe_name( categoryname ) then
+                    sb:SetStatusText( "Invalid characters in category name. " .. SAFE_NAME_HINT, 0 )
+                    enabled = false
+                elseif table.hasValue( tables[ "categories" ], categoryname, "categoryname" ) then
                     sb:SetStatusText( "Category name '" .. categoryname .. "' already taken", 0 )
                     enabled = false
                 else
