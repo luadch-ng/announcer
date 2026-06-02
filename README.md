@@ -118,6 +118,51 @@ Linux needs `libgtk-3-dev` (build) + optionally `xvfb` for headless smoke. The i
 - **Hub account** must be a registered nick (not a guest).
 - **TLS** is mandatory - no plain-text fallback.
 
+## Configuration
+
+Edit these files under `cfg/` after a successful build. Each is a Lua
+file that returns a table; comments inline explain each field.
+
+| File | Purpose |
+|---|---|
+| `cfg/cfg.lua` | Global bot settings: announce interval, sleep / socket timeouts, log-rotation size, slots / share / upload-speed claims |
+| `cfg/hub.lua` | Target hub: address, port, nick, password, TLS keyprint |
+| `cfg/sslparams.lua` | LuaSec `ssl.newcontext` params: cert path, TLS protocol, ciphers |
+| `cfg/rules.lua` | List of watched directories. Each rule = `{ path, category, command, filters }`. Filters: `blacklist`, `whitelist`, `checkspaces`, `checkage`, `checkdirsnfo`, `checkdirssfv`, `skip_hidden`, `max_per_extension` |
+| `cfg/categories.lua` | Category metadata for freshstuff-style multi-category announces |
+| `cfg/id.lua` | **Auto-generated on first run**, gitignored. Holds the bot's ADC PID + CID (tiger-hash secret). DO NOT copy between deployments - each announcer needs its own identity, shared identity = two bots fight over the same nick on the hub. Delete the file to regenerate a fresh identity. |
+
+### Path syntax (`cfg/rules.lua`)
+
+The `path` field in each rule **must use forward slashes on all
+platforms**, including Windows. The Win32 API accepts both `/`
+and `\`, but Lua string literals require backslashes to be escaped
+(`\\`), which is error-prone.
+
+```lua
+-- Correct (cross-platform):
+[ "path" ] = "C:/MyReleases",
+[ "path" ] = "/home/user/releases",
+
+-- Avoid (Lua-string-literal issue, "\M" is not a valid Lua escape):
+[ "path" ] = "C:\MyReleases",
+
+-- Workable but ugly:
+[ "path" ] = "C:\\MyReleases",
+```
+
+### About OSNR
+
+OSNR is an ADC **SUP feature flag** for hub-side release-announce
+handling. The bot negotiates `ADOSNR` in its `HSUP` and disconnects
+if the hub does not advertise it back in `ISUP`. Once negotiated,
+the bot announces each release as a regular `BMSG` to the hub,
+prefixed with the per-rule `command` keyword (e.g. `+addrel <release>`).
+OSNR-aware hub scripts pick these tagged broadcasts out of the main-chat
+stream and render them as a structured release feed for clients that
+display one. Your hub must support OSNR - Luadch enables it by default.
+Without it, the bot refuses to log in.
+
 ## Origins + credits
 
 - Original Win32 GUI: [`luadch/announcer_client`](https://github.com/luadch/announcer_client) by pulsar (with jrock).

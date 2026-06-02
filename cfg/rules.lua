@@ -1,3 +1,12 @@
+--// Watched directories (the [`path`] field below).
+--//
+--// #31: Use forward slashes on ALL platforms. They work on Windows
+--// because the Win32 API accepts both / and \. Backslashes in Lua
+--// strings need to be escaped (\\), which is error-prone.
+--//   Correct (cross-platform):     "C:/MyReleases"  or  "/home/user/releases"
+--//   Incorrect (Lua string):       "C:\MyReleases"  (\M is an invalid Lua escape)
+--//   Workable but ugly:            "C:\\MyReleases" (escaped backslash)
+
 rules = {
 
     [ 1 ] = {
