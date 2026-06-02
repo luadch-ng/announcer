@@ -9,6 +9,7 @@
 local sortserialize
 local savearray
 local savetable
+local savetable_atomic
 local loadtable
 local formatbytes
 
@@ -58,6 +59,35 @@ savetable = function( tbl, name, path )
     else
         return false, err
     end
+end
+
+-- Write-then-rename atomic variant of savetable.
+-- Phase 3 Tier 3 (#7): the original savetable opens the target file
+-- with "w+" which truncates immediately - a concurrent reader (the
+-- GUI status poll) hitting the file mid-write sees an empty or
+-- partial table and util.loadtable returns nil + a "load error".
+-- This variant writes to <path>.tmp, then atomically replaces the
+-- target via os.rename. POSIX rename(2) is atomic across the file;
+-- Windows MoveFileEx falls back to delete+rename and has a tiny
+-- gap between the os.remove and the os.rename - still orders of
+-- magnitude smaller than the previous "file truncated for the
+-- entire serialise duration" race.
+savetable_atomic = function( tbl, name, path )
+    local tmp = path .. ".tmp"
+    local ok, err = savetable( tbl, name, tmp )
+    if not ok then
+        return false, err
+    end
+    -- os.rename refuses to overwrite an existing file on Windows.
+    -- Best-effort: remove the target first if present. POSIX rename
+    -- silently replaces, so this is a no-op there.
+    os.remove( path )
+    local renamed, rerr = os.rename( tmp, path )
+    if not renamed then
+        os.remove( tmp )
+        return false, rerr
+    end
+    return true
 end
  
 loadtable = function( path )
@@ -160,10 +190,11 @@ formatbytes = function( bytes )
 end
 
 return {
- 
+
     savetable = savetable,
+    savetable_atomic = savetable_atomic,
     loadtable = loadtable,
     savearray = savearray,
     formatbytes = formatbytes,
- 
+
 }

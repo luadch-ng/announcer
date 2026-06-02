@@ -55,7 +55,12 @@ local status_file = CORE_PATH .. "status.lua"
 --// GUI file-IPC bridge: turn every "status" event into a
 --// status.lua serialisation. The handler runs inside events.emit's
 --// pcall wrap (Phase 1 PR-B) so any I/O hiccup is logged + chain
---// continues; the GUI poller tolerates an occasional stale read.
+--// continues.
+--// Phase 3 Tier 3 (#7): use savetable_atomic so the GUI poller
+--// never reads a truncated file mid-write. Worker writes ~28x per
+--// login attempt + GUI polls at 1Hz -> the previous "w+ truncate"
+--// race fired regularly; the atomic write-then-rename shrinks the
+--// window to a single os.rename call.
 events.on( "status", function( key, value )
     --// Ensure the file exists (first emit on a fresh install hits
     --// this path; subsequent loops have the file ready).
@@ -63,7 +68,7 @@ events.on( "status", function( key, value )
     if fh then fh:close() end
     local tbl = util.loadtable( status_file ) or { }
     tbl[ key ] = value
-    util.savetable( tbl, "status", status_file )
+    util.savetable_atomic( tbl, "status", status_file )
 end )
 
 log.event( "==============================================================================" )
