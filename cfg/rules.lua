@@ -49,6 +49,13 @@ rules = {
         --// catching sample-folder .nfo or .mkv duplicates. Default
         --// true; set false to only count top-level files.
         [ "max_per_extension_recursive" ] = true,
+        --// #38: max recursion depth for the max_per_extension walk.
+        --// Guards against symlink loops (Linux), junction-point loops
+        --// (Windows), and pathological cfg.path settings that would
+        --// otherwise walk the entire filesystem inside one announce
+        --// tick. Default 8 (omit / set nil to use it); raise if your
+        --// bundles legitimately nest deeper.
+        [ "max_per_extension_max_depth" ] = 8,
         [ "whitelist" ] = {
 
 

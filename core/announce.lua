@@ -106,10 +106,20 @@ end
 --// descends into subfolders (catches sample-folder dirty-bundle
 --// patterns like a second .nfo inside Sample/). pcall around lfs.dir
 --// so permission errors on subdirs don't break the announce loop.
-local count_files_by_ext = function( path, recursive )
+--// #38: `max_depth` caps recursion. Without it a symlink loop
+--// (Linux) or junction-point loop (Windows) - or a misconfigured
+--// cfg.path pointing at e.g. C:/ - would walk the entire filesystem
+--// inside the announce-loop tick, delaying or blocking subsequent
+--// announces. Default 8 covers any legitimate release-bundle nesting
+--// (Sample/, Subs/, CDx/, occasional outliers); operators can raise
+--// it per-rule via cfg.max_per_extension_max_depth.
+local count_files_by_ext = function( path, recursive, max_depth )
+    max_depth = max_depth or 8
     local counts = { }
     local walk
-    walk = function( p )
+    walk = function( p, depth )
+        --// #38: depth gate first - cheaper than the lfs.dir syscall.
+        if depth > max_depth then return end
         --// lfs.dir returns (iter_fn, state); both required for the
         --// generic-for to step. pcall guards against permission errors
         --// on subdirs so an unreadable dir doesn't kill the announce loop.
@@ -128,20 +138,21 @@ local count_files_by_ext = function( path, recursive )
                         counts[ ext ] = ( counts[ ext ] or 0 ) + 1
                     end
                 elseif mode == "directory" and recursive then
-                    walk( f )
+                    walk( f, depth + 1 )
                 end
             end
         end
     end
-    walk( path )
+    walk( path, 0 )
     return counts
 end
 
 --// #29: returns (ext, count, max) for the first extension whose count
 --// exceeds its configured cap, or nil if the bundle is within limits.
-local find_extension_excess = function( path, limits, recursive )
+--// #38: passes `max_depth` through to count_files_by_ext.
+local find_extension_excess = function( path, limits, recursive, max_depth )
     if type( limits ) ~= "table" then return nil end
-    local counts = count_files_by_ext( path, recursive )
+    local counts = count_files_by_ext( path, recursive, max_depth )
     for ext, max in pairs( limits ) do
         if ( counts[ ext ] or 0 ) > max then
             return ext, counts[ ext ], max
@@ -165,7 +176,9 @@ local search = function( path, cfg, found )
             --// but pre-compute is wasted work in that case).
             local excess_ext, excess_cnt, excess_max
             if cfg.max_per_extension and mode == "directory" then
-                excess_ext, excess_cnt, excess_max = find_extension_excess( f, cfg.max_per_extension, cfg.max_per_extension_recursive ~= false )
+                --// #38: cfg.max_per_extension_max_depth is optional; when
+                --// nil count_files_by_ext applies its default cap of 8.
+                excess_ext, excess_cnt, excess_max = find_extension_excess( f, cfg.max_per_extension, cfg.max_per_extension_recursive ~= false, cfg.max_per_extension_max_depth )
             end
             --// blacklist check
             if match( release, cfg.blacklist ) then
