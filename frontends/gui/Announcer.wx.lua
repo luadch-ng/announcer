@@ -3801,12 +3801,18 @@ local log_handler = function( file, parent, mode, button, count, broadcast, sile
     --// size/time normalisation matches the timer guard's. Both sides use
     --// `or 0` for a stable comparison if the file is missing.
     local seed_attr = lfs.attributes( path .. file )
+    --// #34: stash the calling button reference so the auto-refresh
+    --// timer below can Disable/Enable the right one. The timer
+    --// previously hardcoded button_load_logfile regardless of which
+    --// file was last loaded, so clicking Load on announced.txt /
+    --// exception.txt left the wrong button flickering on the 60s tick.
     log_handler_last = {
         [ "file" ] = file,
         [ "path" ] = path,
         [ "time" ] = seed_attr and seed_attr.modification or 0,
         [ "size" ] = wx.wxFileSize( path .. file ) or 0,
         [ "count" ] = count,
+        [ "button" ] = button,
     }
 end
 
@@ -3915,7 +3921,12 @@ panel:Connect( wx.wxEVT_TIMER, function( event )
         local mtime_attr = lfs.attributes( full_path )
         local mtime_now = mtime_attr and mtime_attr.modification or 0
         if size_now ~= log_handler_last[ "size" ] or mtime_now ~= log_handler_last[ "time" ] then
-            log_handler( log_handler_last[ "file" ], logfile_window, "read", button_load_logfile, log_handler_last[ "count" ], nil, true )
+            --// #34: pass the stashed button so the correct one greys
+            --// briefly during the refresh. Fallback to button_load_logfile
+            --// for paranoia - in practice "button" is always set since
+            --// log_handler_last is only assigned at the bottom of
+            --// log_handler() after the button param is consumed.
+            log_handler( log_handler_last[ "file" ], logfile_window, "read", log_handler_last[ "button" ] or button_load_logfile, log_handler_last[ "count" ], nil, true )
             set_logfilesize( control_logsize_log_sensor, control_logsize_ann_sensor, control_logsize_exc_sensor )
         end
     end
