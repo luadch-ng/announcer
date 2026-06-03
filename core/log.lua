@@ -31,8 +31,18 @@ local check_filesize = function( file )
     local logsize = lfs.attributes( file ).size or 0
     if logsize > maxlogsize then
         local f = io.open( file, "w+" ); f:close()
+        --// #42: clear `releases` in-place rather than rebinding to a new
+        --// empty table. core/announce.lua caches the reference at module
+        --// load (`local alreadysent = log.getreleases()`); a rebind would
+        --// leave announce.lua holding the pre-rotation table while the
+        --// new entries go to a fresh post-rotation one - dedup would
+        --// silently break for post-rotation releases until next restart.
+        --// `content` is a string (immutable), so rebind is the only path
+        --// and no external module holds a reference.
         if file:find( "logfile" ) then content = "" end
-        if file:find( "announced" ) then releases = {} end
+        if file:find( "announced" ) then
+            for k in pairs( releases ) do releases[ k ] = nil end
+        end
         return true
     end
     return false
@@ -58,13 +68,21 @@ end
 pre_rotate( LOG_PATH .. "logfile.txt" )
 pre_rotate( LOG_PATH .. "announced.txt" )
 
-local logfile, err = io.open( LOG_PATH .. "logfile.txt", "a+" )
+--// #42: do NOT redeclare `content` / `releases` with `local` here.
+--// The outer locals on lines 26-27 are captured by the check_filesize
+--// closure above (which resets them on rotation). A `local` here would
+--// shadow them - check_filesize would then reset the orphaned outer
+--// while log.event/log.find/log.getreleases keep reading the inner,
+--// so the in-memory buffers would never actually reset after a
+--// rotation. Plain assignment binds to the outer.
+local err
+logfile, err = io.open( LOG_PATH .. "logfile.txt", "a+" )
 assert( logfile, "Fail: " .. tostring( err ) )
-local content = logfile:read( "*a" )
+content = logfile:read( "*a" )
 
-local releasefile, err = io.open( LOG_PATH .. "announced.txt", "a+" )
+releasefile, err = io.open( LOG_PATH .. "announced.txt", "a+" )
 assert( releasefile, "Fail: " .. tostring( err ) )
-local releases = { }
+releases = { }
 for line in releasefile:lines() do releases[ line ] = true end
 
 log = { }
