@@ -26,7 +26,12 @@ local run = true
 net = { }
 
 net.loop = function()
-    local bshare = cfg.botshare * 1024 * 1024
+    --// #36: cfg.botshare flows into a multiplication and then concatenated
+    --// as the BINF SS field. A nil / string value would crash the arithmetic
+    --// (nil) or emit a non-integer field rejected by ADC's `^-?\d+$` parser
+    --// (string). tonumber-wrap so an operator typo degrades to a 0 claim
+    --// instead of a hard fail or wire-protocol violation.
+    local bshare = ( tonumber( cfg.botshare ) or 0 ) * 1024 * 1024
     local client, err = socket.tcp()
     assert( client, "Fail: " .. tostring( err ) )
     log.event( "Try to connect to hub '" .. hub.name .. "' via " .. hub.nick .. "@" .. hub.addr .. ":" .. hub.port .. " with timeout " .. cfg.sockettimeout .. " seconds..." )
@@ -157,7 +162,11 @@ net.loop = function()
                         " PD" .. id.pid ..
                         " ID" .. id.cid ..
                         " SS" .. bshare ..
-                        " SL" .. cfg.botslots ..
+                        --// #36: same defensive tonumber treatment as US (#26)
+                        --// + bshare above; cfg.botslots as a non-integer
+                        --// would emit e.g. "SLabc" / "SL5" (string-typed)
+                        --// that luadch's ADC parser rejects with a kick.
+                        " SL" .. ( tonumber( cfg.botslots ) or 0 ) ..
                         " US" .. ( tonumber( cfg.botupload ) or 0 ) ..
                         " HN" .. "0" ..
                         " HR" .. "0" ..
