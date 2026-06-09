@@ -169,6 +169,7 @@ jobs:
             announcer-*-linux-x86_64.tar.gz
             announcer-*-windows-x86_64.zip
           fail_on_unmatched_files: true
+          body_path: .github/release-body.md
           # SemVer pre-release auto-detection: any tag carrying a `-`
           # suffix after the version (e.g. v1.0.0-rc1, v1.0.0-beta2,
           # v0.9.0-alpha.3) is treated as a pre-release and gets the
