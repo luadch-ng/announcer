@@ -162,7 +162,21 @@ install(DIRECTORY core/        DESTINATION core)
 # trees may contain one from smoke-testing; never install it.
 install(DIRECTORY cfg/         DESTINATION cfg PATTERN "id.lua" EXCLUDE)
 install(DIRECTORY certs/       DESTINATION certs)
-install(DIRECTORY frontends/   DESTINATION frontends)
+# Unix-only: ship the CLI wrapper script (announcer.sh) at the install
+# root so users can `./announcer.sh` instead of `./lua
+# frontends/cli/main.lua`. EXCLUDE'd from the recursive frontends/
+# copy below to avoid a duplicate at `frontends/cli/announcer.sh`;
+# install(PROGRAMS) here preserves the executable bit (install(FILES)
+# would strip it on some hosts; install(DIRECTORY) USE_SOURCE_PERMISSIONS
+# default is reliable on Linux but install(PROGRAMS) is the documented
+# CMake idiom). #53.
+if(UNIX)
+    install(PROGRAMS frontends/cli/announcer.sh DESTINATION .)
+    install(DIRECTORY frontends/   DESTINATION frontends
+        PATTERN "announcer.sh" EXCLUDE)
+else()
+    install(DIRECTORY frontends/   DESTINATION frontends)
+endif()
 
 # GUI resources (PNG icons + GPL badge). The lib/lfs_wx Lua-5.1-ABI lfs
 # duplicate and the lib/ressources/res{1,2}.dll PE-icon containers were

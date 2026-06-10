@@ -53,10 +53,16 @@ jobs:
         run: |
           test -f build/install/announcer/lua
           test -f build/install/announcer/liblua.so
+          test -x build/install/announcer/announcer.sh
           test -d build/install/announcer/core
           test -d build/install/announcer/cfg
           test -d build/install/announcer/certs
           test -d build/install/announcer/frontends
+          # Smoke-check: the wrapper must point at the bundled lua,
+          # not whatever `lua` happens to be on PATH. grep is enough
+          # since the script is 30 lines and the exec line is
+          # deterministic.
+          grep -q "exec \./lua frontends/cli/main\.lua" build/install/announcer/announcer.sh
 
       - name: Determine version tag
         id: tag
