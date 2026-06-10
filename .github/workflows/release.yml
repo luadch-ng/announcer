@@ -150,6 +150,10 @@ jobs:
           test -d build/install/announcer/cfg
           test -d build/install/announcer/certs
           test -d build/install/announcer/frontends
+          # Negative assertion: announcer.sh is a Unix shell wrapper -
+          # it must NOT land in the Windows install tree (#53 follow-up).
+          ! test -e build/install/announcer/announcer.sh
+          ! test -e build/install/announcer/frontends/cli/announcer.sh
 
       - name: Determine version tag
         id: tag

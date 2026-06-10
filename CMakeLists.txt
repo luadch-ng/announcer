@@ -162,20 +162,24 @@ install(DIRECTORY core/        DESTINATION core)
 # trees may contain one from smoke-testing; never install it.
 install(DIRECTORY cfg/         DESTINATION cfg PATTERN "id.lua" EXCLUDE)
 install(DIRECTORY certs/       DESTINATION certs)
-# Unix-only: ship the CLI wrapper script (announcer.sh) at the install
-# root so users can `./announcer.sh` instead of `./lua
-# frontends/cli/main.lua`. EXCLUDE'd from the recursive frontends/
-# copy below to avoid a duplicate at `frontends/cli/announcer.sh`;
-# install(PROGRAMS) here preserves the executable bit (install(FILES)
-# would strip it on some hosts; install(DIRECTORY) USE_SOURCE_PERMISSIONS
-# default is reliable on Linux but install(PROGRAMS) is the documented
-# CMake idiom). #53.
+# Recursive frontends/ copy. announcer.sh is EXCLUDE'd on all platforms
+# because it is a Unix shell script: on Linux it gets explicitly
+# install()'d to the install root below (so users can `./announcer.sh`);
+# on Windows it would be dead weight (no /bin/sh to interpret it).
+# Keeping the EXCLUDE platform-independent avoids divergent install
+# layouts between OS targets - the only difference between platforms
+# is whether the wrapper exists at the install root, not whether a
+# stray copy lurks under frontends/cli/. #53.
+install(DIRECTORY frontends/   DESTINATION frontends
+    PATTERN "announcer.sh" EXCLUDE)
+
+# Unix-only: ship the CLI wrapper script at the install root so users
+# can `./announcer.sh` instead of `./lua frontends/cli/main.lua`.
+# install(PROGRAMS) is the documented CMake idiom for an executable
+# file (preserves the +x bit; install(FILES) would strip it on some
+# hosts). #53.
 if(UNIX)
     install(PROGRAMS frontends/cli/announcer.sh DESTINATION .)
-    install(DIRECTORY frontends/   DESTINATION frontends
-        PATTERN "announcer.sh" EXCLUDE)
-else()
-    install(DIRECTORY frontends/   DESTINATION frontends)
 endif()
 
 # GUI resources (PNG icons + GPL badge). The lib/lfs_wx Lua-5.1-ABI lfs
