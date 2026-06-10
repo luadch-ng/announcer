@@ -217,3 +217,23 @@ if(WIN32)
         endforeach()
     endif()
 endif()
+
+# -----------------------------------------------------------------------------
+# Windows-only GUI launcher executable (Announcer.exe). Thin C wrapper around
+# `lua + frontends/gui/Announcer.wx.lua` so the user can double-click an .exe
+# in the install root instead of typing `lua.exe frontends/gui/Announcer.wx.lua`.
+# Built only when BUILD_GUI=ON AND the host is Windows. The `WIN32` keyword on
+# add_executable produces a GUI-subsystem binary (no console window flash on
+# launch). Links against the embedded Lua 5.4 shared lib defined in
+# lua/src/CMakeLists.txt.
+# -----------------------------------------------------------------------------
+if(BUILD_GUI AND WIN32)
+    add_executable(announcer_gui_launcher WIN32
+        frontends/gui/launcher.c
+    )
+    set_target_properties(announcer_gui_launcher PROPERTIES
+        OUTPUT_NAME "Announcer"
+    )
+    target_link_libraries(announcer_gui_launcher PRIVATE lua)
+    install(TARGETS announcer_gui_launcher RUNTIME DESTINATION .)
+endif()

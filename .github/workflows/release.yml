@@ -85,7 +85,11 @@ jobs:
     name: Build Windows x86_64 (MinGW UCRT64)
     runs-on: windows-latest
     steps:
+      # Submodules: required for the wxwidgets/ submodule that the
+      # -DBUILD_GUI=ON path adds via add_subdirectory(wxwidgets).
       - uses: actions/checkout@v4
+        with:
+          submodules: recursive
 
       - uses: msys2/setup-msys2@v2
         with:
@@ -100,7 +104,14 @@ jobs:
 
       - name: Configure
         shell: msys2 {0}
-        run: cmake -B build -G "MinGW Makefiles" -DCMAKE_BUILD_TYPE=Release -DOPENSSL_ROOT_DIR=/ucrt64
+        # -DBUILD_GUI=ON brings in wxWidgets + wxLua so the Windows
+        # release ships the GUI (Announcer.exe, lib/wx/wx.dll, wxbase /
+        # wxcore / wxadv / wxhtml / wxnet DLLs, MinGW runtime DLLs).
+        # Linux stays CLI-only - the GUI runs on Linux too but the
+        # bundle is large (~50 MB more wxWidgets), so we only ship the
+        # GUI binary for the platform where double-clicking it is the
+        # primary use case.
+        run: cmake -B build -G "MinGW Makefiles" -DCMAKE_BUILD_TYPE=Release -DOPENSSL_ROOT_DIR=/ucrt64 -DBUILD_GUI=ON
 
       - name: Build
         shell: msys2 {0}
@@ -115,6 +126,11 @@ jobs:
         run: |
           test -f build/install/announcer/lua.exe
           test -f build/install/announcer/lua.dll
+          test -f build/install/announcer/Announcer.exe
+          test -f build/install/announcer/lib/wx/wx.dll
+          test -f build/install/announcer/libgcc_s_seh-1.dll
+          test -f build/install/announcer/libstdc++-6.dll
+          test -f build/install/announcer/libwinpthread-1.dll
           test -d build/install/announcer/core
           test -d build/install/announcer/cfg
           test -d build/install/announcer/certs
