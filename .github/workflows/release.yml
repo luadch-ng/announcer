@@ -115,7 +115,16 @@ jobs:
 
       - name: Build
         shell: msys2 {0}
-        run: cmake --build build -j
+        # -j2 (not unbounded -j): wxWidgets translation units are C++
+        # template-heavy and each cc1plus instance can spike well over
+        # 3 GiB resident at peak. GitHub's windows-latest runner has
+        # ~16 GiB RAM; with 4 parallel C++ compiles the kernel starts
+        # killing cc1plus with "out of memory allocating 65536 bytes"
+        # mid-translation-unit (observed 2026-06-10 after an msys2
+        # auto-update pulled GCC 16.1.0). Two-way parallelism keeps
+        # peak memory under ~7 GiB and the build under ~25 minutes,
+        # which is the right trade for this single-runner pipeline.
+        run: cmake --build build -j2
 
       - name: Install into staging tree
         shell: msys2 {0}
