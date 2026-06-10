@@ -85,7 +85,7 @@ GUI on Linux is build-only at this time (`-DBUILD_GUI=ON`); no Linux GUI binary 
 | 2. Download this release | linux-x86_64 tarball OR windows-x86_64 zip |
 | 3. Drop the new tree | extract somewhere fresh, do NOT overwrite the upstream install |
 | 4. Copy your cfg + log | `cp -r /path/to/upstream/cfg/* /path/to/new/announcer/cfg/`<br>`cp /path/to/upstream/log/announced.txt /path/to/new/announcer/log/` |
-| 5. First run | CLI: `./announcer` (Linux) or `announcer.exe` (Windows). GUI: `Announcer.exe` (Windows) |
+| 5. First run | CLI: `./announcer.sh` (Linux) or `lua.exe frontends/cli/main.lua` (Windows). GUI: double-click `Announcer.exe` (Windows) |
 
 The on-disk format of `cfg.lua` / `sslparams.lua` / `hub.lua` / `rules.lua` / `categories.lua` is byte-identical to upstream - your existing settings carry over without edits.
 
