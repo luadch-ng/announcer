@@ -13,6 +13,13 @@
 local socket = require( "socket" )
 local ssl = require( "ssl" )
 local basexx = require( "basexx" )
+-- adclib is also required by core/adc.lua but as a local there - the
+-- 8 adclib.escape / adclib.hashpas call sites in this file need their
+-- own local binding. Latent since Phase 0; surfaced at first real
+-- hub login attempt against v1.0.0-rc1 (PD/ID escape on BINF crashed
+-- with "attempt to index a nil value (global 'adclib')" silently
+-- because the GUI does not capture worker stderr).
+local adclib = require( "adclib" )
 
 --// assert sslparams
 local sslctx, err = ssl.newcontext( sslparams )
