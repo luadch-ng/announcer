@@ -1547,7 +1547,7 @@ validate.cert = function( dialog_show )
             {
                 "Client Certificate",
                 "Please generate your certificate files before connect!",
-                "Howto instructions: docs/README.txt",
+                "Run certs/make_cert.bat (Windows) or certs/make_cert.sh (Linux); details in docs/USERGUIDE.md",
                 "Error: Certificate file not found!"
             }
         )
