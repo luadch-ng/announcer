@@ -48,15 +48,19 @@ local function file_exists( path )
     return false
 end
 
-local function null_redirect( )
-    return is_windows( ) and ">nul 2>&1" or ">/dev/null 2>&1"
-end
-
--- `os.execute` exit semantics differ between Lua versions: 5.1 returns
--- 0 / nonzero; 5.2+ returns true / nil + status-string + code. Treat
--- anything truthy / 0 as success.
+-- We use io.popen + drain rather than os.execute + `>nul` because
+-- Lua's os.execute on Windows can route through cmd.exe or sh
+-- depending on the parent shell environment (msys2 / git-bash
+-- inherits a sh-style env that breaks cmd.exe's `>nul` redirect
+-- parser). io.popen captures stdout into a pipe regardless of
+-- COMSPEC, and `2>&1` merges stderr into the same pipe -
+-- functionally equivalent to /dev/null since we discard the
+-- content, but with no shell-redirect-grammar dependency.
 local function run( cmd )
-    local ok, _, code = os.execute( cmd )
+    local fh = io.popen( cmd .. " 2>&1" )
+    if not fh then return false, "io.popen failed" end
+    fh:read( "*a" )    -- drain (otherwise close blocks on a full pipe)
+    local ok, _, code = fh:close( )
     if ok == true then return true end
     if ok == 0 then return true end
     if type( ok ) == "number" and ok == 0 then return true end
@@ -91,8 +95,7 @@ local function openssl_available( )
     if is_windows( ) and file_exists( "openssl.exe" ) then
         return true
     end
-    local probe = ( is_windows( ) and "where openssl " or "which openssl " ) .. null_redirect( )
-    return ( run( probe ) )
+    return ( run( is_windows( ) and "where openssl" or "which openssl" ) )
 end
 
 -- Derive the cert dir from cert_path so the openssl outputs land
@@ -136,19 +139,18 @@ function cert_autogen.ensure( cert_path, key_path )
     local skey   = dir .. "/serverkey.pem"
     local scert  = dir .. "/servercert.pem"
     local subj   = "/CN=" .. cn
-    local null   = " " .. null_redirect( )
-    local oc     = openssl_cmd( )
+    local oc = openssl_cmd( )
 
-    -- The same five-step chain make_cert.sh runs. Stdout / stderr
-    -- redirected away because they're verbose under modern openssl
-    -- ("Generating an EC private key ..." per call) and would
-    -- swamp the announcer logfile.
+    -- The same five-step chain make_cert.sh runs. Per-step output
+    -- is captured + discarded by run() (io.popen drain + 2>&1
+    -- merge), so the verbose "Generating an EC private key ..."
+    -- lines under modern openssl don't swamp the announcer log.
     local steps = {
-        ( oc .. ' ecparam -out "%s" -name prime256v1 -genkey' ):format( cakey ) .. null,
-        ( oc .. ' req -new -x509 -days 3650 -key "%s" -out "%s" -subj %s' ):format( cakey, cacert, subj ) .. null,
-        ( oc .. ' ecparam -out "%s" -name prime256v1 -genkey' ):format( skey ) .. null,
-        ( oc .. ' req -new -key "%s" -out "%s" -subj %s' ):format( skey, scert, subj ) .. null,
-        ( oc .. ' x509 -req -days 3650 -in "%s" -CA "%s" -CAkey "%s" -set_serial 01 -out "%s"' ):format( scert, cacert, cakey, scert ) .. null,
+        ( oc .. ' ecparam -out "%s" -name prime256v1 -genkey' ):format( cakey ),
+        ( oc .. ' req -new -x509 -days 3650 -key "%s" -out "%s" -subj %s' ):format( cakey, cacert, subj ),
+        ( oc .. ' ecparam -out "%s" -name prime256v1 -genkey' ):format( skey ),
+        ( oc .. ' req -new -key "%s" -out "%s" -subj %s' ):format( skey, scert, subj ),
+        ( oc .. ' x509 -req -days 3650 -in "%s" -CA "%s" -CAkey "%s" -set_serial 01 -out "%s"' ):format( scert, cacert, cakey, scert ),
     }
 
     for i, cmd in ipairs( steps ) do
