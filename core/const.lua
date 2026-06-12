@@ -18,4 +18,4 @@ RES_PATH  = "lib/ressources/"
 FRONTEND_PATH = "frontends/"
 
 PROGRAM_NAME = "Luadch-NG Announcer"
-_VERSION     = "1.0.0-dev" -- Phase 1: Lua 5.4 runtime + hub-vendored 5.4 deps
+_VERSION     = "1.0.0-rc3" -- rc3: GUI cosmetics + tray-crash + worker-stderr + auto-cert
