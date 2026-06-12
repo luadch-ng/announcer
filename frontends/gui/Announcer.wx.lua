@@ -1323,12 +1323,28 @@ local add_taskbar = function( frame, checkbox_trayicon )
                 show_about_window( frame )
             end
         )
-        --// #61: route tray Exit through frame:Close so HandleAppExit
-        --// is reached via wxEVT_CLOSE_WINDOW (the contract path),
-        --// not via a direct menu-event call. Symmetric with the
-        --// menubar Exit at L4304.
-        menu:Connect( wx.wxID_EXIT, wx.wxEVT_COMMAND_MENU_SELECTED,
+        --// #61 round 2: tray Exit must NOT call frame:Close
+        --// synchronously from inside the menu handler. wxMSW's
+        --// tray-popup-menu pushes a handler onto the frame for the
+        --// duration of the menu; tearing the frame down before the
+        --// menu's handler returns hits ~wxWindowBase("any pushed
+        --// event handlers must have been removed"). The PopEventHandler
+        --// loop in HandleAppExit didn't drain it - the menu still has
+        --// the chain when ~wxWindowBase runs.
+        --//
+        --// Defer the close via a one-shot wxTimer. The menu handler
+        --// returns immediately, wxMSW unwinds the menu chain naturally,
+        --// THEN the 1ms timer fires and frame:Close(false) runs in a
+        --// clean stack. tray_exit_timer + its id are closure-captured
+        --// (no GC race) and bound to a distinct id so they coexist
+        --// with the gauge-refresh wxEVT_TIMER on `panel` (L3960).
+        local tray_exit_timer_id = wx.wxNewId()
+        local tray_exit_timer = wx.wxTimer( frame, tray_exit_timer_id )
+        frame:Connect( tray_exit_timer_id, wx.wxEVT_TIMER,
             function( event ) frame:Close( false ) end
+        )
+        menu:Connect( wx.wxID_EXIT, wx.wxEVT_COMMAND_MENU_SELECTED,
+            function( event ) tray_exit_timer:StartOnce( 1 ) end
         )
         taskbar:Connect( wx.wxEVT_TASKBAR_RIGHT_DOWN,
             function( event )
@@ -1510,6 +1526,14 @@ HandleAppExit = function( event )
         taskbar = nil
     end
     notebook_image_list:delete()
+    --// (The PopEventHandler defensive loop from the first round of
+    --// #61 was removed: wxLua's `==` compares Lua-side userdata
+    --// wrappers, not the underlying C++ pointer, so the
+    --// `GetEventHandler() ~= this` guard never short-circuits and
+    --// PopEventHandler runs past the empty chain straight into
+    --// wxWidgets' "cannot pop the wxWindow itself" assert. The
+    --// deferred wxTimer in add_taskbar's tray-Exit binding is the
+    --// load-bearing fix instead.)
     --// When called from wxEVT_CLOSE_WINDOW (the only path that
     --// reaches us once the rewrites below land), event:Skip() lets
     --// wxWidgets destroy the frame in the right order. The
