@@ -4095,8 +4095,38 @@ local start_process = function()
     proc = wx.wxProcess()
     proc:Redirect()
     proc:Detach()
+    --// #59: drain the worker's redirected stderr (and stdout) at
+    --// process exit so a worker that died with a Lua-level error is
+    --// diagnosable instead of silently disappearing. wxProcess:Redirect
+    --// captures both streams into in-process readers; without this
+    --// loop nothing reads them and any error the worker emitted
+    --// vanishes (the #57 adclib crash needed ~30 minutes of sleuthing
+    --// for exactly this reason). Lines go to log/logfile.txt prefixed
+    --// with [worker stderr] / [worker stdout]; stderr also surfaces
+    --// in the GUI log window in RED so the operator notices.
     proc:Connect( wx.wxEVT_END_PROCESS,
         function( event )
+            if proc then
+                local function drain( stream, prefix, ui_color )
+                    if not stream then return end
+                    local txt = wx.wxTextInputStream( stream )
+                    while not stream:Eof() do
+                        local line = txt:ReadLine()
+                        if not line or #line == 0 then break end
+                        local stamped = "[ " .. os.date( "%Y-%m-%d / %H:%M:%S" ) .. " ] " .. prefix .. line
+                        local fh = io.open( files[ "log" ][ "logfile" ], "a" )
+                        if fh then
+                            fh:write( stamped .. "\n" )
+                            fh:close()
+                        end
+                        if ui_color then
+                            log_broadcast( log_window, prefix .. line, ui_color )
+                        end
+                    end
+                end
+                drain( proc:GetErrorStream(), "[worker stderr] ", "RED" )
+                drain( proc:GetInputStream(), "[worker stdout] ", nil )
+            end
             proc = nil
             pid = 0
         end
