@@ -21,6 +21,28 @@ local basexx = require( "basexx" )
 -- because the GUI does not capture worker stderr).
 local adclib = require( "adclib" )
 
+--// #62: ensure the cert pair exists before ssl.newcontext reads it.
+--// First-run installs (and ones where the operator deleted certs/
+--// after a key rotation) used to fall straight through to "Please
+--// generate your certificate files before connect!" - now we
+--// shell out to openssl ourselves. The module is a no-op when the
+--// cert is already present, so the steady-state cost is one pair
+--// of file_exists checks.
+local cert_autogen = dofile( "core/cert_autogen.lua" )
+local cert_ok, cert_err = cert_autogen.ensure( sslparams.certificate, sslparams.key )
+if not cert_ok then
+    --// Print to stderr so the wxProcess:Redirect drain in the GUI
+    --// (#59) and the bare CLI terminal both surface the message.
+    io.stderr:write( "Fail: cert auto-gen: " .. tostring( cert_err ) .. "\n" )
+    if log and log.event then
+        log.event( "Fail: cert auto-gen: " .. tostring( cert_err ) )
+    end
+    error( "cert auto-gen failed: " .. tostring( cert_err ) )
+end
+if log and log.event then
+    log.event( "Certificates verified at " .. sslparams.certificate )
+end
+
 --// assert sslparams
 local sslctx, err = ssl.newcontext( sslparams )
 assert( sslctx, "Fail: " .. tostring( err ) )

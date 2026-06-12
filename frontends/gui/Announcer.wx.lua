@@ -1612,15 +1612,33 @@ end
 
 --// validate cert: general
 validate.cert = function( dialog_show )
-    local ssl_mode, ssl_err = lfs.attributes( tables[ "sslparams" ]["certificate"], "mode" )
+    local cert_path = tables[ "sslparams" ][ "certificate" ]
+    local key_path  = tables[ "sslparams" ][ "key" ]
+    local ssl_mode, ssl_err = lfs.attributes( cert_path, "mode" )
     local check_failed = type( ssl_err ) == "string" or ssl_mode == "nil"
+
+    --// #62: cert missing -> try to auto-generate via openssl before
+    --// falling through to the legacy "please generate manually"
+    --// error path. On success the operator sees the success line
+    --// in GREEN and the connect proceeds normally; the manual
+    --// instructions only appear if openssl is unavailable or the
+    --// chain fails for some other reason. Worker-side net.lua also
+    --// calls cert_autogen.ensure on every startup, so CLI users
+    --// get the same coverage without depending on the GUI path.
     if check_failed then
+        local cert_autogen = dofile( CORE_PATH .. "cert_autogen.lua" )
+        local gen_ok, gen_err = cert_autogen.ensure( cert_path, key_path )
+        if gen_ok then
+            log_broadcast( log_window, "Auto-generated TLS certificate at " .. cert_path, "GREEN" )
+            return false
+        end
         log_broadcast(
             log_window,
             {
                 "Client Certificate",
                 "Please generate your certificate files before connect!",
                 "Run certs/make_cert.bat (Windows) or certs/make_cert.sh (Linux); details in docs/USERGUIDE.md",
+                "Auto-generation failed: " .. tostring( gen_err ),
                 "Error: Certificate file not found!"
             }
         )
