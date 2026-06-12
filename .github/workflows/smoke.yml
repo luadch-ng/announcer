@@ -110,6 +110,7 @@ jobs:
           # listening at 127.0.0.1:5001 in CI). `timeout 5s` lets us
           # observe the run without waiting for the announcer to give
           # up; the cert_autogen success line is the new sentinel.
+          rm -f log/logfile.txt
           output=$(timeout 5s ./lua frontends/cli/main.lua 2>&1 || true)
           echo "$output"
           echo "--- log/logfile.txt ---"
@@ -126,8 +127,11 @@ jobs:
           cd "$RUNNER_TEMP"
           # #62 + clean state for this anchored-path run: rm any
           # cert pair leftover from the previous step so cert_autogen
-          # actually exercises its generate path again on this run.
+          # actually exercises its generate path again on this run,
+          # AND wipe the logfile so the grep below reflects ONLY this
+          # invocation's output (not the previous step's).
           rm -f "$install_dir/certs/servercert.pem" "$install_dir/certs/serverkey.pem"
+          rm -f "$install_dir/log/logfile.txt"
           output=$(timeout 5s "$install_dir/lua" "$install_dir/frontends/cli/main.lua" 2>&1 || true)
           echo "$output"
           echo "--- log/logfile.txt ---"
@@ -212,6 +216,7 @@ jobs:
           # #62: see linux smoke job - new sentinel is cert_autogen
           # success (logged into log/logfile.txt) instead of the old
           # ssl.newcontext failure.
+          rm -f log/logfile.txt
           output=$(timeout 5s ./lua.exe frontends/cli/main.lua 2>&1 || true)
           echo "$output"
           echo "--- log/logfile.txt ---"
@@ -228,6 +233,7 @@ jobs:
           install_dir="$GITHUB_WORKSPACE/build/install/announcer"
           cd "$RUNNER_TEMP"
           rm -f "$install_dir/certs/servercert.pem" "$install_dir/certs/serverkey.pem"
+          rm -f "$install_dir/log/logfile.txt"
           output=$(timeout 5s "$install_dir/lua.exe" "$install_dir/frontends/cli/main.lua" 2>&1 || true)
           echo "$output"
           echo "--- log/logfile.txt ---"
