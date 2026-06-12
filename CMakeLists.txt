@@ -246,8 +246,14 @@ endif()
 # lua/src/CMakeLists.txt.
 # -----------------------------------------------------------------------------
 if(BUILD_GUI AND WIN32)
+    # frontends/gui/announcer.rc embeds frontends/gui/applogo.ico as the
+    # .exe's primary ICON resource so the OS taskbar / Alt-Tab / Explorer
+    # show our logo instead of the generic GUI exe icon (#63). MinGW
+    # auto-invokes windres on .rc sources listed in add_executable.
+    enable_language(RC)
     add_executable(announcer_gui_launcher WIN32
         frontends/gui/launcher.c
+        frontends/gui/announcer.rc
     )
     set_target_properties(announcer_gui_launcher PROPERTIES
         OUTPUT_NAME "Announcer"

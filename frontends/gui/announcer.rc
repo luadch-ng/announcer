@@ -1,0 +1,13 @@
+/* Windows resource script for Announcer.exe.
+ *
+ * Embeds applogo.ico as the executable's primary icon, which Windows uses
+ * for the taskbar, Alt+Tab, Explorer file listing, and the title bar. The
+ * wxFrame:SetIcons() call in Announcer.wx.lua attaches PNG icons at runtime
+ * for the wx-side widgets, but the OS-side taskbar uses ONLY the embedded
+ * .exe resource - hence we need both. Closes the second half of
+ * luadch-ng/announcer#63.
+ *
+ * IDI_ICON1 is the lowest-numbered ICON ordinal; Windows shell picks the
+ * first ICON resource by ordinal as the "main" icon for the .exe.
+ */
+IDI_ICON1 ICON "applogo.ico"
