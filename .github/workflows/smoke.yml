@@ -103,27 +103,42 @@ jobs:
       - name: Frontend bootstrap smoke (relative arg[0], fallback path)
         run: |
           cd build/install/announcer
-          output=$(./lua frontends/cli/main.lua 2>&1 || true)
+          # #62: cert_autogen now generates a working cert pair before
+          # ssl.newcontext gets a chance to fail, so the legacy
+          # "error loading private key" sentinel is no longer reached.
+          # The chain instead reaches the reconnect loop (no hub
+          # listening at 127.0.0.1:5001 in CI). `timeout 5s` lets us
+          # observe the run without waiting for the announcer to give
+          # up; the cert_autogen success line is the new sentinel.
+          output=$(timeout 5s ./lua frontends/cli/main.lua 2>&1 || true)
           echo "$output"
+          echo "--- log/logfile.txt ---"
+          cat log/logfile.txt 2>/dev/null || true
           echo "$output" | grep -q "did not anchor; assuming CWD is install root" \
             || { echo "SMOKE FAIL: expected stderr fallback note absent"; exit 1; }
-          echo "$output" | grep -q "error loading private key" \
-            || { echo "SMOKE FAIL: chain did not reach ssl.newcontext"; exit 1; }
-          echo "SMOKE OK: fallback path emits warn + reaches ssl.newcontext"
+          grep -q "Certificates verified at" log/logfile.txt 2>/dev/null \
+            || { echo "SMOKE FAIL: chain did not reach cert_autogen (#62)"; exit 1; }
+          echo "SMOKE OK: fallback path emits warn + cert_autogen completes"
 
       - name: Frontend bootstrap smoke (absolute arg[0], anchored path)
         run: |
           install_dir="$GITHUB_WORKSPACE/build/install/announcer"
           cd "$RUNNER_TEMP"
-          output=$("$install_dir/lua" "$install_dir/frontends/cli/main.lua" 2>&1 || true)
+          # #62 + clean state for this anchored-path run: rm any
+          # cert pair leftover from the previous step so cert_autogen
+          # actually exercises its generate path again on this run.
+          rm -f "$install_dir/certs/servercert.pem" "$install_dir/certs/serverkey.pem"
+          output=$(timeout 5s "$install_dir/lua" "$install_dir/frontends/cli/main.lua" 2>&1 || true)
           echo "$output"
+          echo "--- log/logfile.txt ---"
+          cat "$install_dir/log/logfile.txt" 2>/dev/null || true
           if echo "$output" | grep -q "did not anchor"; then
             echo "SMOKE FAIL: anchored path unexpectedly hit the fallback warn"
             exit 1
           fi
-          echo "$output" | grep -q "error loading private key" \
-            || { echo "SMOKE FAIL: chain did not reach ssl.newcontext"; exit 1; }
-          echo "SMOKE OK: anchored path silent + reaches ssl.newcontext"
+          grep -q "Certificates verified at" "$install_dir/log/logfile.txt" 2>/dev/null \
+            || { echo "SMOKE FAIL: chain did not reach cert_autogen (#62)"; exit 1; }
+          echo "SMOKE OK: anchored path silent + cert_autogen completes"
 
   smoke-windows:
     name: Smoke Windows x86_64 (MinGW UCRT64)
@@ -189,33 +204,41 @@ jobs:
             end
           '
 
-      # See the Linux job above for rationale (PR-D #10 / follow-up #11).
+      # See the Linux job above for rationale (PR-D #10 / follow-up #11 / #62).
       - name: Frontend bootstrap smoke (relative arg[0], fallback path)
         shell: msys2 {0}
         run: |
           cd build/install/announcer
-          output=$(./lua.exe frontends/cli/main.lua 2>&1 || true)
+          # #62: see linux smoke job - new sentinel is cert_autogen
+          # success (logged into log/logfile.txt) instead of the old
+          # ssl.newcontext failure.
+          output=$(timeout 5s ./lua.exe frontends/cli/main.lua 2>&1 || true)
           echo "$output"
+          echo "--- log/logfile.txt ---"
+          cat log/logfile.txt 2>/dev/null || true
           echo "$output" | grep -q "did not anchor; assuming CWD is install root" \
             || { echo "SMOKE FAIL: expected stderr fallback note absent"; exit 1; }
-          echo "$output" | grep -q "error loading private key" \
-            || { echo "SMOKE FAIL: chain did not reach ssl.newcontext"; exit 1; }
-          echo "SMOKE OK: fallback path emits warn + reaches ssl.newcontext"
+          grep -q "Certificates verified at" log/logfile.txt 2>/dev/null \
+            || { echo "SMOKE FAIL: chain did not reach cert_autogen (#62)"; exit 1; }
+          echo "SMOKE OK: fallback path emits warn + cert_autogen completes"
 
       - name: Frontend bootstrap smoke (absolute arg[0], anchored path)
         shell: msys2 {0}
         run: |
           install_dir="$GITHUB_WORKSPACE/build/install/announcer"
           cd "$RUNNER_TEMP"
-          output=$("$install_dir/lua.exe" "$install_dir/frontends/cli/main.lua" 2>&1 || true)
+          rm -f "$install_dir/certs/servercert.pem" "$install_dir/certs/serverkey.pem"
+          output=$(timeout 5s "$install_dir/lua.exe" "$install_dir/frontends/cli/main.lua" 2>&1 || true)
           echo "$output"
+          echo "--- log/logfile.txt ---"
+          cat "$install_dir/log/logfile.txt" 2>/dev/null || true
           if echo "$output" | grep -q "did not anchor"; then
             echo "SMOKE FAIL: anchored path unexpectedly hit the fallback warn"
             exit 1
           fi
-          echo "$output" | grep -q "error loading private key" \
-            || { echo "SMOKE FAIL: chain did not reach ssl.newcontext"; exit 1; }
-          echo "SMOKE OK: anchored path silent + reaches ssl.newcontext"
+          grep -q "Certificates verified at" "$install_dir/log/logfile.txt" 2>/dev/null \
+            || { echo "SMOKE FAIL: chain did not reach cert_autogen (#62)"; exit 1; }
+          echo "SMOKE OK: anchored path silent + cert_autogen completes"
 
   # ---------------------------------------------------------------------------
   # Phase 3 Tier 2d (#17): exercise the BUILD_GUI=ON path. Builds the
