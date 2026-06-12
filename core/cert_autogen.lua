@@ -1,0 +1,142 @@
+--[[
+
+    core/cert_autogen.lua - first-run TLS cert generation (#62)
+
+    Generates a self-signed announcer client cert (servercert.pem +
+    serverkey.pem) if either file is missing, by invoking the
+    bundled `openssl` CLI on the host system. Mirrors the openssl
+    chain in `certs/make_cert.{bat,sh}` so the on-disk result is
+    interchangeable.
+
+    The cert is a self-signed leaf signed by a single-use CA. The
+    CA private key + cert (`cakey.pem` / `cacert.pem`) are removed
+    after signing - they are transient signing material with no
+    runtime use, and leaving the CA private key next to the live
+    server key on disk is bad practice. Same cleanup pattern as
+    `make_cert.{bat,sh}` post-#56.
+
+    `openssl` must be on PATH. The Windows release ships
+    `libssl-3-x64.dll` + `libcrypto-3-x64.dll` for LuaSec but NOT
+    the `openssl.exe` binary; operators on Windows without OpenSSL
+    installed need to either install OpenSSL or run
+    `certs/make_cert.bat` once before the first connect (which
+    will work if they have OpenSSL via a different path).
+
+    Cross-platform: detects Windows via `package.config` and picks
+    the right `where` / `which` probe + the right redirect-to-null
+    suffix. The actual openssl flags are identical on both
+    platforms.
+
+    Return contract:
+        ensure(cert_path, key_path) -> true on success / cert
+            already present, OR false + error message on failure.
+        The caller decides whether to log / bail / display.
+
+        - written 2026-06-12 for luadch-ng/announcer#62
+
+]]--
+
+local cert_autogen = { }
+
+local function is_windows( )
+    return package.config:sub( 1, 1 ) == "\\"
+end
+
+local function file_exists( path )
+    local f = io.open( path, "r" )
+    if f then f:close( ); return true end
+    return false
+end
+
+local function null_redirect( )
+    return is_windows( ) and ">nul 2>&1" or ">/dev/null 2>&1"
+end
+
+-- `os.execute` exit semantics differ between Lua versions: 5.1 returns
+-- 0 / nonzero; 5.2+ returns true / nil + status-string + code. Treat
+-- anything truthy / 0 as success.
+local function run( cmd )
+    local ok, _, code = os.execute( cmd )
+    if ok == true then return true end
+    if ok == 0 then return true end
+    if type( ok ) == "number" and ok == 0 then return true end
+    return false, code
+end
+
+local function openssl_available( )
+    local probe = ( is_windows( ) and "where openssl " or "which openssl " ) .. null_redirect( )
+    return ( run( probe ) )
+end
+
+-- Derive the cert dir from cert_path so the openssl outputs land
+-- next to the existing layout (and so the CA artefacts we delete
+-- afterward are in the same dir).
+local function cert_dir_from( path )
+    return path:match( "^(.+)[/\\][^/\\]+$" ) or "certs"
+end
+
+-- Read a single line from `openssl rand -hex 16`. Done via io.popen
+-- so we capture the random CN directly instead of writing-then-reading
+-- a uid.txt file (matches the streamlined make_cert.bat post-#56).
+local function random_cn( )
+    local fh = io.popen( "openssl rand -hex 16" )
+    if not fh then return nil, "io.popen openssl rand failed" end
+    local cn = fh:read( "*l" )
+    fh:close( )
+    if not cn or #cn < 32 then
+        return nil, "openssl rand returned short / empty output"
+    end
+    return cn
+end
+
+function cert_autogen.ensure( cert_path, key_path )
+    if file_exists( cert_path ) and file_exists( key_path ) then
+        return true
+    end
+
+    if not openssl_available( ) then
+        return false, "openssl not on PATH; install OpenSSL or run "
+            .. ( is_windows( ) and "certs/make_cert.bat" or "certs/make_cert.sh" )
+            .. " manually before connecting"
+    end
+
+    local cn, err = random_cn( )
+    if not cn then return false, err end
+
+    local dir = cert_dir_from( cert_path )
+    local cakey  = dir .. "/cakey.pem"
+    local cacert = dir .. "/cacert.pem"
+    local skey   = dir .. "/serverkey.pem"
+    local scert  = dir .. "/servercert.pem"
+    local subj   = "/CN=" .. cn
+    local null   = " " .. null_redirect( )
+
+    -- The same five-step chain make_cert.sh runs. Stdout / stderr
+    -- redirected away because they're verbose under modern openssl
+    -- ("Generating an EC private key ..." per call) and would
+    -- swamp the announcer logfile.
+    local steps = {
+        ( 'openssl ecparam -out "%s" -name prime256v1 -genkey' ):format( cakey ) .. null,
+        ( 'openssl req -new -x509 -days 3650 -key "%s" -out "%s" -subj %s' ):format( cakey, cacert, subj ) .. null,
+        ( 'openssl ecparam -out "%s" -name prime256v1 -genkey' ):format( skey ) .. null,
+        ( 'openssl req -new -key "%s" -out "%s" -subj %s' ):format( skey, scert, subj ) .. null,
+        ( 'openssl x509 -req -days 3650 -in "%s" -CA "%s" -CAkey "%s" -set_serial 01 -out "%s"' ):format( scert, cacert, cakey, scert ) .. null,
+    }
+
+    for i, cmd in ipairs( steps ) do
+        if not run( cmd ) then
+            return false, "openssl step " .. i .. " failed; check that OpenSSL is functional and the certs/ directory is writable"
+        end
+    end
+
+    -- Drop transient CA material so the runtime cert dir holds only
+    -- the announcer's own server key + cert. Errors here are
+    -- non-fatal - leaving cakey.pem / cacert.pem behind is messy
+    -- but the cert pair is already in place.
+    os.remove( cakey )
+    os.remove( cacert )
+
+    return true
+end
+
+return cert_autogen
