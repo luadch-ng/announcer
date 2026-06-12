@@ -413,18 +413,21 @@ end
 
 --// about window
 local show_about_window = function( frame )
-    --// dialog window
+    --// #63: dialog height grew 505 -> 545 to fit the two new
+    --// maintenance + repo-URL lines added below "Members: jrock".
+    --// All y-coords from y=180 (the first horizontal line) onwards
+    --// were shifted by +40px to keep the same vertical rhythm.
     local di = wx.wxDialog(
         frame,
         wx.wxID_ANY,
         "About" .. " " .. app_name,
         wx.wxDefaultPosition,
-        wx.wxSize( 320, 505 ),
+        wx.wxSize( 320, 545 ),
         wx.wxSTAY_ON_TOP + wx.wxDEFAULT_DIALOG_STYLE - wx.wxCLOSE_BOX - wx.wxMAXIMIZE_BOX - wx.wxMINIMIZE_BOX
     )
     di:SetBackgroundColour( wx.wxColour( 255, 255, 255 ) )
-    di:SetMinSize( wx.wxSize( 320, 505 ) )
-    di:SetMaxSize( wx.wxSize( 320, 505 ) )
+    di:SetMinSize( wx.wxSize( 320, 545 ) )
+    di:SetMaxSize( wx.wxSize( 320, 545 ) )
 
     --// app logo. Upstream used the wxBitmap():ConvertToImage() idiom
     --// to obtain an empty wxImage; that's wxLua-2.8-tolerant but
@@ -467,8 +470,40 @@ local show_about_window = function( frame )
     control:SetFont( about_normal_2 )
     control:Centre( wx.wxHORIZONTAL )
 
+    --// #63: maintainer + repo URL added below Members. URL is the
+    --// org page on github so it survives a future maintainer
+    --// hand-off without an edit. Both lines use about_normal_2 to
+    --// match the surrounding rhythm.
+    control = wx.wxStaticText(
+        di,
+        wx.wxID_ANY,
+        "Maintained since 2026 by Aybo",
+        wx.wxPoint( 0, 170 )
+    )
+    control:SetFont( about_normal_2 )
+    control:Centre( wx.wxHORIZONTAL )
+
+    --// #63: wxHyperlinkCtrl opens the URL in the system's default
+    --// browser on click. Visited / hover colours use the OS defaults
+    --// so the link styles automatically match the wxLua 3.x theme.
+    --//
+    --// Explicit width: wxHyperlinkCtrl with wxDefaultSize miscomputes
+    --// its preferred width on wxLua 3.x and clips the label left + right
+    --// when Centre() runs. 220px comfortably fits the URL at the
+    --// surrounding font size.
+    control = wx.wxHyperlinkCtrl(
+        di,
+        wx.wxID_ANY,
+        "https://github.com/luadch-ng",
+        "https://github.com/luadch-ng",
+        wx.wxPoint( 0, 190 ),
+        wx.wxSize( 220, -1 )
+    )
+    control:SetFont( about_normal_2 )
+    control:Centre( wx.wxHORIZONTAL )
+
     --// horizontal line
-    control = wx.wxStaticLine( di, wx.wxID_ANY, wx.wxPoint( 0, 180 ), wx.wxSize( 275, 1 ) )
+    control = wx.wxStaticLine( di, wx.wxID_ANY, wx.wxPoint( 0, 220 ), wx.wxSize( 275, 1 ) )
     control:Centre( wx.wxHORIZONTAL )
 
     --// gpl text
@@ -476,7 +511,7 @@ local show_about_window = function( frame )
         di,
         wx.wxID_ANY,
         app_license,
-        wx.wxPoint( 0, 195 )
+        wx.wxPoint( 0, 235 )
     )
     control:SetFont( about_normal_2 )
     control:Centre( wx.wxHORIZONTAL )
@@ -488,14 +523,14 @@ local show_about_window = function( frame )
         di,
         wx.wxID_ANY,
         wx.wxBitmap( img_gpl_logo ),
-        wx.wxPoint( 0, 215 ),
+        wx.wxPoint( 0, 255 ),
         wx.wxSize( img_gpl_logo:GetWidth(), img_gpl_logo:GetHeight() )
     )
     control:Centre( wx.wxHORIZONTAL )
     img_gpl_logo:Destroy()
 
     --// horizontal line
-    control = wx.wxStaticLine( di, wx.wxID_ANY, wx.wxPoint( 0, 310 ), wx.wxSize( 275, 1 ) )
+    control = wx.wxStaticLine( di, wx.wxID_ANY, wx.wxPoint( 0, 350 ), wx.wxSize( 275, 1 ) )
     control:Centre( wx.wxHORIZONTAL )
 
     --// credits text
@@ -503,7 +538,7 @@ local show_about_window = function( frame )
         di,
         wx.wxID_ANY,
         "Credits:",
-        wx.wxPoint( 0, 325 )
+        wx.wxPoint( 0, 365 )
     )
     control:SetFont( about_normal_2 )
     control:Centre( wx.wxHORIZONTAL )
@@ -513,7 +548,7 @@ local show_about_window = function( frame )
         di,
         wx.wxID_ANY,
         "Greets fly out to:\n\nblastbeat, Sopor, jrock, Peccator, Demonlord\nand all the others for testing the client.\nThanks.",
-        wx.wxPoint( 0, 350 ),
+        wx.wxPoint( 0, 390 ),
         wx.wxSize( 275, 90 ),
         wx.wxTE_READONLY + wx.wxTE_MULTILINE + wx.wxTE_RICH + wx.wxSUNKEN_BORDER + wx.wxHSCROLL + wx.wxTE_CENTRE
     )
@@ -522,7 +557,7 @@ local show_about_window = function( frame )
     control:Centre( wx.wxHORIZONTAL )
 
     --// button
-    local about_btn_close = wx.wxButton( di, wx.wxID_ANY, "Close", wx.wxPoint( 0, 449 ), wx.wxSize( 80, 20 ) )
+    local about_btn_close = wx.wxButton( di, wx.wxID_ANY, "Close", wx.wxPoint( 0, 489 ), wx.wxSize( 80, 20 ) )
     about_btn_close:SetBackgroundColour( wx.wxColour( 255, 255, 255 ) )
     about_btn_close:Centre( wx.wxHORIZONTAL )
 
@@ -1907,7 +1942,16 @@ control_keyprint:Connect( wx.wxID_ANY, wx.wxEVT_LEAVE_WINDOW, function( event ) 
 --// To re-enable the legacy modes against a non-luadch-ng peer, add
 --// the entries back here AND uncomment the matching branches in
 --// set_sslparams_value() + save_sslparams_values() above.
-control_tls = wx.wxRadioBox( tab_1, id_control_tls, "TLS Mode:", wx.wxPoint( 352, 250 ), wx.wxSize( 83, 60 ), { --[["TLSv1", "TLSv1.2",]] "TLSv1.3" }, 1, wx.wxSUNKEN_BORDER )
+--//
+--// #63: outer box width back to 100 (matches original column
+--// width) and wxSUNKEN_BORDER style dropped. The latter was eating
+--// ~6-8px of inner space on each side which is exactly the budget
+--// the "TLSv1.3" radio item needs under wxLua 3.x to render the
+--// trailing "3" without truncation. wxLua 2.x rendered the same
+--// item tight enough that the SUNKEN_BORDER chrome fit; 3.x's
+--// extra item-padding doesn't. Save button width also reverted to
+--// the original 83 to match the surrounding column rhythm.
+control_tls = wx.wxRadioBox( tab_1, id_control_tls, "TLS Mode:", wx.wxPoint( 352, 250 ), wx.wxSize( 100, 60 ), { --[["TLSv1", "TLSv1.2",]] "TLSv1.3" }, 1 )
 
 --// button save
 save_hub = wx.wxButton( tab_1, id_save_hub, "Save", wx.wxPoint( 352, 332 ), wx.wxSize( 83, 25 ) )
