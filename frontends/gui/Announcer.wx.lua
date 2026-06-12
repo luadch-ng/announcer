@@ -1323,18 +1323,47 @@ local add_taskbar = function( frame, checkbox_trayicon )
                 show_about_window( frame )
             end
         )
-        menu:Connect( wx.wxID_EXIT, wx.wxEVT_COMMAND_MENU_SELECTED, HandleAppExit )
+        --// #61 round 2: tray Exit must NOT call frame:Close
+        --// synchronously from inside the menu handler. wxMSW's
+        --// tray-popup-menu pushes a handler onto the frame for the
+        --// duration of the menu; tearing the frame down before the
+        --// menu's handler returns hits ~wxWindowBase("any pushed
+        --// event handlers must have been removed"). The PopEventHandler
+        --// loop in HandleAppExit didn't drain it - the menu still has
+        --// the chain when ~wxWindowBase runs.
+        --//
+        --// Defer the close via a one-shot wxTimer. The menu handler
+        --// returns immediately, wxMSW unwinds the menu chain naturally,
+        --// THEN the 1ms timer fires and frame:Close(false) runs in a
+        --// clean stack. tray_exit_timer + its id are closure-captured
+        --// (no GC race) and bound to a distinct id so they coexist
+        --// with the gauge-refresh wxEVT_TIMER on `panel` (L3960).
+        local tray_exit_timer_id = wx.wxNewId()
+        local tray_exit_timer = wx.wxTimer( frame, tray_exit_timer_id )
+        frame:Connect( tray_exit_timer_id, wx.wxEVT_TIMER,
+            function( event ) frame:Close( false ) end
+        )
+        menu:Connect( wx.wxID_EXIT, wx.wxEVT_COMMAND_MENU_SELECTED,
+            function( event ) tray_exit_timer:StartOnce( 1 ) end
+        )
         taskbar:Connect( wx.wxEVT_TASKBAR_RIGHT_DOWN,
             function( event )
                 taskbar:PopupMenu( menu )
             end
         )
+        --// #61: read state once and act explicitly. Pre-fix called
+        --// frame:Iconize(not IsIconized()) then queried IsIconized()
+        --// AGAIN before the event was processed - the second read
+        --// returned the pre-toggle value so the restore path never
+        --// took the show+raise branch and the window stayed hidden.
         taskbar:Connect( wx.wxEVT_TASKBAR_LEFT_DOWN,
             function( event )
-                frame:Iconize( not frame:IsIconized() )
-                local show = not frame:IsIconized()
-                if show then
+                if frame:IsIconized() then
+                    frame:Iconize( false )
+                    frame:Show( true )
                     frame:Raise( true )
+                else
+                    frame:Iconize( true )
                 end
             end
         )
@@ -1439,37 +1468,81 @@ add_statusbar( frame )
 --// menubar
 add_menubar( frame )
 
---// helper unction for menu:exit + taskbar:exit
+--// helper function for menu:exit + taskbar:exit
+--//
+--// #61: rewritten to fix the
+--//   wincmn.cpp(473): GetEventHandler() == this failed in ~wxWindowBase()
+--// crash and the "can't restore from tray" symptom Sopor reported. Two
+--// concrete changes:
+--//
+--//   1. Cleanup order. Pre-fix did frame:Destroy() FIRST, then
+--//      taskbar:delete() / timer:delete() - the taskbar's connected
+--//      menu handlers and the timer's wxEVT_TIMER handler outlived
+--//      the frame they referenced, which is what tripped the
+--//      ~wxWindowBase assertion. New order: worker -> timer -> taskbar
+--//      -> notebook_image_list -> frame.
+--//
+--//   2. Honour the wxCloseEvent contract. When HandleAppExit is
+--//      reached via wxEVT_CLOSE_WINDOW (the X button + the menu/tray
+--//      Exit paths both go through frame:Close), the correct pattern
+--//      is event:Veto() to cancel and event:Skip() to let wx destroy
+--//      the frame itself - NOT calling frame:Destroy() from inside
+--//      the close-handler. Older releases got away with it because
+--//      wxLua 2.x was lenient; wxLua 3.x is not.
 HandleAppExit = function( event )
-    --// todo: clean up here with exit check
     local quit = dialog.question( "Really quit?" )
-    if quit == wx.wxID_YES then
-        if need_save.cfg or need_save.hub or need_save.rules then
-            local dialog_question = "Save changes?\n"
-            local save = dialog.question( dialog_question )
-            if save == wx.wxID_YES then
-                if validate.save( true ) then
-                    return
-                else
-                    save_changes( log_window )
-                end
+    if quit ~= wx.wxID_YES then
+        if event and event.Veto then event:Veto() end
+        return
+    end
+    if need_save.cfg or need_save.hub or need_save.rules then
+        local dialog_question = "Save changes?\n"
+        local save = dialog.question( dialog_question )
+        if save == wx.wxID_YES then
+            if validate.save( true ) then
+                if event and event.Veto then event:Veto() end
+                return
+            else
+                save_changes( log_window )
             end
         end
-        if ( pid > 0 ) then
-            local exists = wx.wxProcess.Exists( pid )
-            if exists then
-                local ret = wx.wxProcess.Kill( pid, wx.wxSIGKILL, wx.wxKILL_CHILDREN )
-            end
-            pid = 0
+    end
+    --// Cleanup BEFORE the frame goes away so all child resources
+    --// have a live parent during teardown.
+    if ( pid > 0 ) then
+        local exists = wx.wxProcess.Exists( pid )
+        if exists then
+            wx.wxProcess.Kill( pid, wx.wxSIGKILL, wx.wxKILL_CHILDREN )
         end
-        notebook_image_list:delete()
+        pid = 0
+    end
+    if timer then
+        timer:Stop()
+        timer:delete()
+        timer = nil
+    end
+    if taskbar then
+        taskbar:delete()
+        taskbar = nil
+    end
+    notebook_image_list:delete()
+    --// (The PopEventHandler defensive loop from the first round of
+    --// #61 was removed: wxLua's `==` compares Lua-side userdata
+    --// wrappers, not the underlying C++ pointer, so the
+    --// `GetEventHandler() ~= this` guard never short-circuits and
+    --// PopEventHandler runs past the empty chain straight into
+    --// wxWidgets' "cannot pop the wxWindow itself" assert. The
+    --// deferred wxTimer in add_taskbar's tray-Exit binding is the
+    --// load-bearing fix instead.)
+    --// When called from wxEVT_CLOSE_WINDOW (the only path that
+    --// reaches us once the rewrites below land), event:Skip() lets
+    --// wxWidgets destroy the frame in the right order. The
+    --// frame:Destroy() fallback covers any legacy / non-close
+    --// entry that may slip in.
+    if event and event.Skip then
+        event:Skip()
+    else
         frame:Destroy()
-        if taskbar then taskbar:delete() end
-        if timer then
-            timer:Stop()
-            timer:delete()
-            timer = nil
-        end
     end
 end
 
@@ -4301,9 +4374,12 @@ local main = function()
     frame:Connect( wx.wxID_ANY, wx.wxEVT_CLOSE_WINDOW, HandleAppExit )
 
     --// event - menu - exit
+    --// #61: frame:Close(false) (not true) so HandleAppExit can honour
+    --// the user's "no" on the Really-quit dialog via event:Veto().
+    --// Pre-fix the forced close ignored veto and quit anyway.
     frame:Connect( wx.wxID_EXIT, wx.wxEVT_COMMAND_MENU_SELECTED,
         function( event )
-            frame:Close( true )
+            frame:Close( false )
         end
     )
 
