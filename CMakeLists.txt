@@ -216,6 +216,25 @@ if(WIN32)
         unset(_openssl_${_dll_var} CACHE)
     endforeach()
 
+    # Ship openssl.exe alongside the libssl-3 / libcrypto-3 DLLs so
+    # core/cert_autogen.lua (#62) has a guaranteed openssl binary to
+    # shell out to on first run. Without it, the auto-cert path would
+    # depend on the operator having Git for Windows / Node / Python
+    # / etc. on PATH. Windows has no built-in openssl, so for a clean
+    # install we need to provide one ourselves.
+    #
+    # Linux: no equivalent install rule - openssl is essentially
+    # universally pre-installed on the distros we target, and the
+    # release tarball is meant to be lean.
+    find_file(_openssl_exe
+        NAMES openssl.exe
+        HINTS "${OPENSSL_ROOT_DIR}" "${OPENSSL_ROOT_DIR}/bin"
+        NO_DEFAULT_PATH
+        REQUIRED
+    )
+    install(PROGRAMS "${_openssl_exe}" DESTINATION .)
+    unset(_openssl_exe CACHE)
+
     # When BUILD_GUI=ON the wxLua shared module (lib/wx/wx.dll) and the
     # wxWidgets shared libs pull in the MinGW C/C++ runtime. Bundle those
     # too so the install tree is self-sufficient (no PATH-leak from the

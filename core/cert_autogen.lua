@@ -63,7 +63,34 @@ local function run( cmd )
     return false, code
 end
 
+-- The openssl command we shell out to. The bare token works both
+-- ways:
+--
+--   * Windows: cmd.exe resolves command names by searching the
+--     current directory FIRST, then PATH. CWD at this point is the
+--     install root (frontends/bootstrap.lua chdirs there). The
+--     Windows release zip ships openssl.exe next to the libssl-3 /
+--     libcrypto-3 DLLs, so the bundled binary wins automatically
+--     when it's present, and the operator's PATH-installed openssl
+--     (Git for Windows, Node, Python, etc.) is the fallback when
+--     it isn't.
+--
+--   * Linux: PATH lookup. We don't ship a bundled binary on Linux -
+--     openssl is essentially universally pre-installed on the
+--     distros we target.
+local function openssl_cmd( )
+    return "openssl"
+end
+
 local function openssl_available( )
+    -- On Windows the bundled binary in CWD satisfies cmd.exe's
+    -- cwd-first lookup but is NOT visible to `where openssl`
+    -- (which only searches PATH). Special-case that so a clean
+    -- Windows install with the bundled openssl.exe but no PATH
+    -- entry doesn't fail the probe.
+    if is_windows( ) and file_exists( "openssl.exe" ) then
+        return true
+    end
     local probe = ( is_windows( ) and "where openssl " or "which openssl " ) .. null_redirect( )
     return ( run( probe ) )
 end
@@ -79,7 +106,7 @@ end
 -- so we capture the random CN directly instead of writing-then-reading
 -- a uid.txt file (matches the streamlined make_cert.bat post-#56).
 local function random_cn( )
-    local fh = io.popen( "openssl rand -hex 16" )
+    local fh = io.popen( openssl_cmd( ) .. " rand -hex 16" )
     if not fh then return nil, "io.popen openssl rand failed" end
     local cn = fh:read( "*l" )
     fh:close( )
@@ -110,17 +137,18 @@ function cert_autogen.ensure( cert_path, key_path )
     local scert  = dir .. "/servercert.pem"
     local subj   = "/CN=" .. cn
     local null   = " " .. null_redirect( )
+    local oc     = openssl_cmd( )
 
     -- The same five-step chain make_cert.sh runs. Stdout / stderr
     -- redirected away because they're verbose under modern openssl
     -- ("Generating an EC private key ..." per call) and would
     -- swamp the announcer logfile.
     local steps = {
-        ( 'openssl ecparam -out "%s" -name prime256v1 -genkey' ):format( cakey ) .. null,
-        ( 'openssl req -new -x509 -days 3650 -key "%s" -out "%s" -subj %s' ):format( cakey, cacert, subj ) .. null,
-        ( 'openssl ecparam -out "%s" -name prime256v1 -genkey' ):format( skey ) .. null,
-        ( 'openssl req -new -key "%s" -out "%s" -subj %s' ):format( skey, scert, subj ) .. null,
-        ( 'openssl x509 -req -days 3650 -in "%s" -CA "%s" -CAkey "%s" -set_serial 01 -out "%s"' ):format( scert, cacert, cakey, scert ) .. null,
+        ( oc .. ' ecparam -out "%s" -name prime256v1 -genkey' ):format( cakey ) .. null,
+        ( oc .. ' req -new -x509 -days 3650 -key "%s" -out "%s" -subj %s' ):format( cakey, cacert, subj ) .. null,
+        ( oc .. ' ecparam -out "%s" -name prime256v1 -genkey' ):format( skey ) .. null,
+        ( oc .. ' req -new -key "%s" -out "%s" -subj %s' ):format( skey, scert, subj ) .. null,
+        ( oc .. ' x509 -req -days 3650 -in "%s" -CA "%s" -CAkey "%s" -set_serial 01 -out "%s"' ):format( scert, cacert, cakey, scert ) .. null,
     }
 
     for i, cmd in ipairs( steps ) do
