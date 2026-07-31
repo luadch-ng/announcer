@@ -54,6 +54,61 @@ local bottag = "Announcer"
 local run = true
 net = { }
 
+--// #70 follow-up: login-phase ISTA handling. luadch sends its login
+--// rejections as `ISTA <code> <msg>` frames (nick/CID taken, bad
+--// password, reg-only, ...) exactly where the announcer expects the
+--// next login frame; the old strict reads mis-reported these as e.g.
+--// "No password request, closing" and always treated them as terminal.
+--// recv_login() transparently skips informational status (severity 0/1,
+--// e.g. a foreign hub's MOTD) and classifies a rejection so login_bail()
+--// can retry the transient ones and only give up (terminal) on the
+--// genuinely fatal ones. Codes verified against luadch core/hub_dispatch.
+local RETRY_ISTA = { [ "211" ] = true, [ "222" ] = true, [ "224" ] = true } --// hub-full / nick|CID taken -> transient
+local MAX_LOGIN_STATUS = 8 --// bound the info-frame skip so a chatty hub cannot wedge login
+
+--// Read one login-phase line. Returns either:
+--//   buf, nil               a normal (non-ISTA) frame; caller checks its type
+--//   nil, "retry",    msg   transient rejection -> reconnect with backoff
+--//   nil, "terminal", msg   fatal rejection     -> stop (do not hammer)
+--//   nil, "error",    msg   socket error / closed -> reconnect
+local function recv_login( client )
+    for _ = 1, MAX_LOGIN_STATUS do
+        local buf, err = client:receive( "*l" )
+        if err then return nil, "error", tostring( err ) end
+        local code = buf:match( "^ISTA (%d%d%d)" )
+        if not code then return buf end                 --// a normal frame
+        local sev = code:sub( 1, 1 )
+        if sev == "0" or sev == "1" then
+            log.event( "Hub status (info): " .. buf )    --// informational -> skip, keep reading
+        elseif RETRY_ISTA[ code ] then
+            return nil, "retry", buf
+        else
+            return nil, "terminal", buf
+        end
+    end
+    return nil, "retry", "too many hub status frames"
+end
+
+--// Common bail-out for a login read that did not yield its expected
+--// frame. Logs the real reason, emits a GUI status, tears the socket
+--// down and returns the boolean net.loop() propagates: true = terminal
+--// (frontend stops), false = transient (frontend reconnects w/ backoff).
+local function login_bail( client, statuskey, disp, msg )
+    if disp == "terminal" then
+        log.event( "Login rejected (fatal): " .. tostring( msg ) )
+        events.emit( "status", statuskey, "Fail: login rejected by hub" )
+    elseif disp == "retry" then
+        log.event( "Login rejected, reconnecting: " .. tostring( msg ) )
+        events.emit( "status", statuskey, "Fail: " .. tostring( msg ) .. " | reconnecting..." )
+    else --// "error"
+        log.event( "Fail: " .. tostring( msg ) )
+        events.emit( "status", statuskey, "Fail: " .. tostring( msg ) )
+    end
+    pcall( function() client:close() end )
+    run = false
+    return ( disp == "terminal" )
+end
+
 net.loop = function()
     --// #36: cfg.botshare flows into a multiplication and then concatenated
     --// as the BINF SS field. A nil / string value would crash the arithmetic
@@ -130,13 +185,8 @@ net.loop = function()
     -------------------------------------------------------------------------------------------------------
     log.event( "Waiting for hub support..." )
     if run then events.emit( "status", "support", "Waiting for hub support..." ) end
-    local buf, err = client:receive( "*l" )
-    if err then
-        log.event( "Fail: " .. tostring( err ) )
-        events.emit( "status", "hubsupport", "Fail: " .. tostring( err ) )
-        run = false
-        return false
-    end
+    local buf, disp, msg = recv_login( client )
+    if disp then return login_bail( client, "hubsupport", disp, msg ) end
     -------------------------------------------------------------------------------------------------------
     log.event( "-------------------------------------------------------------------------------" ) -- DEBUG
     log.event( "HUB 2 CLIENT: " .. tostring( buf ) ) ------------------------------------------------ DEBUG
@@ -153,12 +203,8 @@ net.loop = function()
     end
     log.event( "Hub has OSNR support, waiting for SID..." )
     if run then events.emit( "status", "hubosnr", "Hub has OSNR support, waiting for SID..." ) end
-    local buf, err = client:receive( "*l" )
-    if err then
-        log.event( "Fail: " .. tostring( err ) )
-        events.emit( "status", "hubsid", "Fail: " .. tostring( err ) )
-        return false
-    end
+    local buf, disp, msg = recv_login( client )
+    if disp then return login_bail( client, "hubsid", disp, msg ) end
     -------------------------------------------------------------------------------------------------------
     log.event( "-------------------------------------------------------------------------------" ) -- DEBUG
     log.event( "HUB 2 CLIENT: " .. tostring( buf ) ) ------------------------------------------------ DEBUG
@@ -212,13 +258,8 @@ net.loop = function()
                                  "\n"
 
     log.event( "Waiting for hub INF..." )
-    local buf, err = client:receive( "*l" )
-    if err then
-        log.event( "Fail: " .. tostring( err ) )
-        events.emit( "status", "hubinf", "Fail: " .. tostring( err ) )
-        run = false
-        return false
-    end
+    local buf, disp, msg = recv_login( client )
+    if disp then return login_bail( client, "hubinf", disp, msg ) end
     -------------------------------------------------------------------------------------------------------
     log.event( "-------------------------------------------------------------------------------" ) -- DEBUG
     log.event( "HUB 2 CLIENT: " .. tostring( buf ) ) ------------------------------------------------ DEBUG
@@ -247,13 +288,8 @@ net.loop = function()
     end
     log.event( "Own INF sended, waiting for password request..." )
     if run then events.emit( "status", "owninf", "Own INF sended, waiting for password request..." ) end
-    local buf, err = client:receive( "*l" )
-    if err then
-        log.event( "Fail: " .. tostring( err ) )
-        events.emit( "status", "passwd", "Fail: " .. tostring( err ) )
-        run = false
-        return false
-    end
+    local buf, disp, msg = recv_login( client )
+    if disp then return login_bail( client, "passwd", disp, msg ) end
     -------------------------------------------------------------------------------------------------------
     log.event( "-------------------------------------------------------------------------------" ) -- DEBUG
     log.event( "HUB 2 CLIENT: " .. tostring( buf ) ) ------------------------------------------------ DEBUG
@@ -287,12 +323,8 @@ net.loop = function()
     -------------------------------------------------------------------------------------------------------
     log.event( "Waiting for login..." )
     if run then events.emit( "status", "hubsalt", "Waiting for login..." ) end
-    local buf, err = client:receive( "*l" )
-    if err then
-        log.event( "Fail: " .. tostring( err ) )
-        --events.emit( "status", "hublogin", "Fail: " .. tostring( err ) )
-        return false
-    end
+    local buf, disp, msg = recv_login( client )
+    if disp then return login_bail( client, "hublogin", disp, msg ) end
     -------------------------------------------------------------------------------------------------------
     log.event( "-------------------------------------------------------------------------------" ) -- DEBUG
     log.event( "HUB 2 CLIENT: " .. tostring( buf ) ) ------------------------------------------------ DEBUG
@@ -338,43 +370,79 @@ net.loop = function()
     end
     log.event( "Waiting " .. ( tonumber( cfg.sleeptime ) or 10 ) .. " seconds before starting the announcer..." )
     socket.sleep( tonumber( cfg.sleeptime ) or 10 )
+    --// #70: read-driven main loop. The previous loop only ever SENT
+    --// (announce BMSGs + one keepalive per announceinterval) and never
+    --// read the hub stream, so a dropped hub was detected only when a
+    --// later send happened to fail - and on a half-open TCP connection a
+    --// send buffers locally for minutes (or never surfaces an error at
+    --// all), so the announcer sat "connected" and never reconnected. We
+    --// now poll the socket between announce scans (see the liveness read
+    --// below) so a CLEAN close (peer FIN/RST) is caught within
+    --// `poll_timeout` seconds. Two backstops cover a SILENT half-open
+    --// (peer vanished, no FIN/RST, so the read just keeps timing out):
+    --// the periodic keepalive send below fails once the OS gives up on
+    --// the dead link (~announce_interval + TCP RTO), and SO_KEEPALIVE
+    --// lets the OS probe as a last resort. setoption is best-effort
+    --// (pcall'd) in case the luasec object does not proxy it.
+    pcall( function() client:setoption( "keepalive", true ) end )
+    local poll_timeout = 5
+    local announce_interval = tonumber( cfg.announceinterval ) or 5 * 60
+    local next_announce = 0 --// 0 -> run the first announce scan immediately
     while true do
-        local found = announce.update()
-        local c = 0
-        log.event( "Start announcing..." )
-        for release, cfg in pairs( found ) do
-            local command = cfg.command
-            local alibicheck = cfg.alibicheck
-            local alibinick = cfg.alibinick
-            if alibicheck then
-                command = command .. " " .. alibinick
-            end
-            local category = cfg.category
-            if ( type( category ) ~= "string" ) or ( type( command ) ~= "string" ) then
-                log.event( "Your rules.lua is broken. No valid category/command given for release '" .. release .. "' given." )
-            else
-                command = command .. " " .. category .. " " .. release
-                command = adclib.escape( command )
-                local succ, err = client:send( "BMSG " .. sid .. " " .. command .. "\n" )
-                if err then
-                    log.event( "Fail: " .. tostring( err ) )
-                    return false
+        if socket.gettime() >= next_announce then
+            --// #70 review: the liveness poll below drops the socket timeout
+            --// to poll_timeout, which also caps SENDS; restore the full
+            --// send timeout for the BMSG / keepalive writes in this block.
+            client:settimeout( cfg.sockettimeout )
+            local found = announce.update()
+            local c = 0
+            log.event( "Start announcing..." )
+            for release, cfg in pairs( found ) do
+                local command = cfg.command
+                local alibicheck = cfg.alibicheck
+                local alibinick = cfg.alibinick
+                if alibicheck then
+                    command = command .. " " .. alibinick
+                end
+                local category = cfg.category
+                if ( type( category ) ~= "string" ) or ( type( command ) ~= "string" ) then
+                    log.event( "Your rules.lua is broken. No valid category/command given for release '" .. release .. "' given." )
                 else
-                    log.release( release )
-                    --log.event( "Announced '" .. release .. "'.")
-                    c = c + 1
+                    command = command .. " " .. category .. " " .. release
+                    command = adclib.escape( command )
+                    local succ, err = client:send( "BMSG " .. sid .. " " .. command .. "\n" )
+                    if err then
+                        log.event( "Fail: " .. tostring( err ) )
+                        return false
+                    else
+                        log.release( release )
+                        --log.event( "Announced '" .. release .. "'.")
+                        c = c + 1
+                    end
                 end
             end
+            log.event( "...finished. Announced " .. c .. " new releases." )
+            local succ, err = client:send( CLIENT_KEEPING_ALIVE ) -- keeping-alive ping
+            if err then log.event( "Fail: " .. tostring( err ) ) return false end
+            next_announce = socket.gettime() + announce_interval
         end
-        log.event( "...finished. Announced " .. c .. " new releases." )
-        socket.sleep( tonumber( cfg.announceinterval ) or 5 * 60 )
-        local succ, err = client:send( CLIENT_KEEPING_ALIVE ) -- send some keeping alive ping
-        if err then log.event( "Fail: " .. tostring( err ) ) return false end
-        -------------------------------------------------------------------------------------------------------
-        log.event( "-------------------------------------------------------------------------------" ) -- DEBUG
-        log.event( "CLIENT 2 HUB (KEEP ALIVE): " .. tostring( CLIENT_KEEPING_ALIVE ) ) ------------------ DEBUG
-        --log.event( "-------------------------------------------------------------------------------" ) -- DEBUG
-        -------------------------------------------------------------------------------------------------------
+        --// Liveness poll: read (and discard) any hub frame with a short
+        --// timeout so the announce scheduler stays responsive. On this
+        --// luasec build an idle TLS read returns "wantread" (NOT
+        --// "timeout"), while a peer close returns "closed" - verified
+        --// empirically against the :dev hub (idle -> "wantread",
+        --// `docker stop` -> "closed"). So treat wantread/wantwrite/timeout
+        --// as idle-but-alive and anything else (closed, hard SSL error) as
+        --// a dropped hub -> return for the frontend's reconnect loop. The
+        --// announcer does not act on inbound frames; we read purely for
+        --// liveness, so discarded partial lines are harmless.
+        client:settimeout( poll_timeout )
+        local buf, err = client:receive( "*l" )
+        if err and err ~= "wantread" and err ~= "wantwrite" and err ~= "timeout" then
+            log.event( "Fail: hub connection lost (" .. tostring( err ) .. ")" )
+            events.emit( "status", "hubconnect", "Fail: hub connection lost (" .. tostring( err ) .. ")" )
+            return false
+        end
     end
 end
 
