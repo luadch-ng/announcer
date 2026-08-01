@@ -62,7 +62,7 @@ local notebook_width   = 795
 local notebook_height  = 388
 
 local log_width        = 795
-local log_height       = 233
+local log_height       = 200
 
 local refresh_timer    = 60000
 
@@ -1590,6 +1590,37 @@ log_window = wx.wxTextCtrl( panel, wx.wxID_ANY, "", wx.wxPoint( 0, 418 ), wx.wxS
 
 log_window:SetBackgroundColour( wx.wxColour( 0, 0, 0 ) )
 log_window:SetFont( log_font )
+
+--// #70: connection-status indicator (LED + label) in the free strip
+--// below the log window. Colour is driven by conn_status_timer (further
+--// down) from core/status.lua: green = connected, orange = reconnecting,
+--// red = disconnected. set_conn_led() only acts on a state CHANGE, so the
+--// log line fires once per transition (not on every 2 s poll); the init
+--// call passes quiet=true so startup does not log a spurious line.
+local conn_led = wx.wxStaticText( panel, wx.wxID_ANY, "●", wx.wxPoint( 8, 622 ), wx.wxSize( 28, 32 ) )
+conn_led:SetFont( wx.wxFont( 20, wx.wxFONTFAMILY_DEFAULT, wx.wxFONTSTYLE_NORMAL, wx.wxFONTWEIGHT_BOLD ) )
+local conn_led_label = wx.wxStaticText( panel, wx.wxID_ANY, "Disconnected", wx.wxPoint( 40, 636 ), wx.wxSize( 150, 20 ) )
+local last_conn_state
+local set_conn_led = function( state, quiet )
+    if state == last_conn_state then return end
+    last_conn_state = state
+    if state == "connected" then
+        conn_led:SetForegroundColour( wx.wxColour( 0, 200, 0 ) )
+        conn_led_label:SetLabel( "Connected" )
+        if not quiet then log_broadcast( log_window, "Connection established.", "GREEN" ) end
+    elseif state == "reconnecting" then
+        conn_led:SetForegroundColour( wx.wxColour( 254, 140, 0 ) )
+        conn_led_label:SetLabel( "Reconnecting..." )
+        if not quiet then log_broadcast( log_window, "Connection lost - reconnecting...", "ORANGE" ) end
+    else
+        conn_led:SetForegroundColour( wx.wxColour( 220, 40, 40 ) )
+        conn_led_label:SetLabel( "Disconnected" )
+        if not quiet then log_broadcast( log_window, "Disconnected.", "RED" ) end
+    end
+    conn_led:Refresh()
+    conn_led_label:Refresh()
+end
+set_conn_led( "disconnected", true )
 
 -------------------------------------------------------------------------------------------------------------------------------------
 --// DIALOG //-----------------------------------------------------------------------------------------------------------------------
@@ -4067,12 +4098,37 @@ panel:Connect( wx.wxEVT_TIMER, function( event )
     end
 end )
 
+--// #70: live connection-status timer. The spawned worker keeps
+--// core/status.lua current (hubconnect -> "Fail: ..." while the link is
+--// dropped / retrying, back to a success value once it reconnects), but
+--// the connect sequence in start_process() reads that file only ONCE, so
+--// the status bar used to freeze on "Connected to:" straight through an
+--// outage. This dedicated timer lives on `frame` (not `panel`) so it does
+--// NOT also fire the panel log-refresh handler above; it re-reads the
+--// status every 2 s and reflects the live state. Started/stopped with the
+--// session via start_timer()/stop_timer(), so it only runs while active.
+local id_conn_status = new_id()
+local conn_status_timer = wx.wxTimer( frame, id_conn_status )
+frame:Connect( id_conn_status, wx.wxEVT_TIMER, function( event )
+    local hubaddr = tables[ "hub" ][ "addr" ] or "unknown"
+    local hubport = tables[ "hub" ][ "port" ] or "unknown"
+    if get_status( files[ "core" ][ "status" ], "hubconnect" ):find( "Fail" ) then
+        sb:SetStatusText( "Reconnecting to: adcs://" .. hubaddr .. ":" .. hubport .. " ...", 0 )
+        set_conn_led( "reconnecting" )
+    elseif get_status( files[ "core" ][ "status" ], "hublogin" ) == "Login complete." then
+        sb:SetStatusText( "Connected to: adcs://" .. hubaddr .. ":" .. hubport, 0 )
+        set_conn_led( "connected" )
+    end
+end )
+
 local start_timer = function()
     timer:Start( refresh_timer )
+    conn_status_timer:Start( 2000 ) --// #70: poll live connection status every 2 s
     log_broadcast( log_window, "Started timer: calc logfiles size, every " .. refresh_timer .. " ms" )
 end
 local stop_timer = function()
     timer:Stop()
+    conn_status_timer:Stop()
     log_broadcast( log_window, "Stopped timer: calc logfiles size" )
 end
 
@@ -4147,6 +4203,11 @@ local start_process = function()
             end
             proc = nil
             pid = 0
+            --// #70: the worker exited (terminal login failure, or a
+            --// user-driven kill). Reflect it in the LED and stop the
+            --// status poll so it does not sit on a stale "reconnecting".
+            conn_status_timer:Stop()
+            set_conn_led( "disconnected" )
         end
     )
 
@@ -4429,6 +4490,7 @@ stop_client:Connect( id_stop_client, wx.wxEVT_COMMAND_BUTTON_CLICKED,
         local hubaddr = tables[ "hub" ][ "addr" ] or "unknown"
         local hubport = tables[ "hub" ][ "port" ] or "unknown"
         sb:SetStatusText( "Disconnected from: adcs://" .. hubaddr .. ":" .. hubport, 0 )
+        set_conn_led( "disconnected" )
     end
 )
 
