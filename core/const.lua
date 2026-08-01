@@ -18,4 +18,4 @@ RES_PATH  = "lib/ressources/"
 FRONTEND_PATH = "frontends/"
 
 PROGRAM_NAME = "Luadch-NG Announcer"
-_VERSION     = "1.0.0-rc3" -- rc3: GUI cosmetics + tray-crash + worker-stderr + auto-cert
+_VERSION     = "1.0.0-rc4" -- rc4: auto-reconnect (#70) + ISTA-aware login + live GUI connection indicator
